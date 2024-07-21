@@ -1,0 +1,24 @@
+{
+    "development": {
+      "username": "sa",
+      "password": "12345",
+      "database": "ChatDb",
+      "host": "localhost",
+      "dialect": "mssql" 
+    },
+    "test": {
+      "username": "sa",
+      "password": "12345",
+      "database": "ChatDb",
+      "host": "1433",
+      "dialect": "mssql" 
+    },
+    "production": {
+      "username": "sa",
+      "password": "12345",
+      "database": "ChatDb",
+      "host": "1433",
+      "dialect": "mssql" 
+    }
+  }
+  
