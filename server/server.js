@@ -4,7 +4,7 @@ const bodyParser = require('body-parser');
 const cors = require('cors');
 const http = require('http');
 const socketIo = require('socket.io');
-const initRouters = require('./routes');
+const initRouters = require('./routes'); // Đảm bảo initRouters tồn tại và được cấu hình đúng
 
 const app = express();
 const server = http.createServer(app);
@@ -17,16 +17,18 @@ const io = socketIo(server, {
 
 app.use(express.static('public'));
 
+// CORS Configuration
 app.use(cors({
   origin: "http://localhost:3000",
   methods: ["GET", "POST", "PUT", "DELETE"],
 }));
 
+// Session Configuration
 app.use(session({
   secret: "MusicPlayer",
   resave: false,
   saveUninitialized: true,
-  cookie: { secure: process.env.NODE_ENV === 'production' } 
+  cookie: { secure: process.env.NODE_ENV === 'production' } // Chỉ bật secure cookie khi ở môi trường sản xuất
 }));
 
 app.use(bodyParser.json());
@@ -34,30 +36,30 @@ app.use(bodyParser.urlencoded({ extended: true }));
 
 initRouters(app);
 
-const users = {}; 
+let users = {}; // Lưu trữ socket ID của người dùng
 
-io.on('connection', (socket) => {
-  console.log('a user connected', socket.id);
-
-  socket.on('register', (userId) => {
+io.on("connection", (socket) => {
+  // Đăng ký người dùng với socket ID của họ
+  socket.on("register", (userId) => {
     users[userId] = socket.id;
-    console.log(`User registered: ${userId}`);
   });
 
   // Xử lý gửi tin nhắn
-  socket.on('chat message', ({ senderId, receiverId, message }) => {
-    const receiverSocketId = users[receiverId];
-    if (receiverSocketId) {
-      io.to(receiverSocketId).emit('chat message', { senderId, message });
+  socket.on("sendMessage", ({ senderId, receiverId, message }) => {
+    // Gửi tin nhắn đến người nhận
+    if (users[receiverId]) {
+      io.to(users[receiverId]).emit("receiveMessage", { senderId, message });
     }
+    // Gửi tin nhắn đến người gửi
+    io.to(users[senderId]).emit("receiveMessage", { senderId, message });
   });
 
   // Xử lý ngắt kết nối
-  socket.on('disconnect', () => {
-    console.log('user disconnected', socket.id);
-    for (const userId in users) {
-      if (users[userId] === socket.id) {
-        delete users[userId];
+  socket.on("disconnect", () => {
+    // Xóa người dùng khỏi danh sách khi họ ngắt kết nối
+    for (const [key, value] of Object.entries(users)) {
+      if (value === socket.id) {
+        delete users[key];
         break;
       }
     }

@@ -1,10 +1,11 @@
+IF EXISTS (SELECT * FROM sys.databases WHERE name = 'ChatDb')
+BEGIN
+    DROP DATABASE ChatDb;
+END
+go
 create database ChatDb
 go
 use ChatDb
-go
-create table Chat(
-	chatRoom int primary key
-);
 go
 create table Users(
 	userId int primary key identity,
@@ -12,9 +13,12 @@ create table Users(
 	password varchar(255) not null,
 );
 go
-create table Message(
-	messageId int primary key identity,
-	time datetime default getdate(),
-	userId int foreign key references Users(userId),
-	chatRoom int foreign key references Chat(chatRoom)
+CREATE TABLE Message (
+  MessageId INT PRIMARY KEY IDENTITY(1,1),
+  SenderId INT NOT NULL,
+  ReceiverId INT NOT NULL,
+  MessageText TEXT NOT NULL,
+  Timestamp DATETIME DEFAULT GETDATE(),
+  FOREIGN KEY (SenderId) REFERENCES Users(UserId),
+  FOREIGN KEY (ReceiverId) REFERENCES Users(UserId)
 );

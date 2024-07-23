@@ -1,10 +1,10 @@
 .header-container {
-    display: flex;
-    justify-content: center;
-    margin-bottom: 20px;
-  }
-  
-  .header-menu {
-    width: 300px;
-  }
-  
+  display: flex;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.header-menu {
+  width: -webkit-fill-available;
+  justify-content: center;
+}

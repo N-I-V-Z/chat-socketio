@@ -1,8 +1,9 @@
 import { message, Input, Button } from "antd";
 import axios from "axios";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useState } from "react";
-import "./Register.css"; // Import CSS cho các custom style
+import "./Register.css";
+import Header from "../layout/Header";
 const config = require("../config/config");
 
 function Register() {
@@ -39,6 +40,7 @@ function Register() {
 
   return (
     <div className="register-container">
+      <Header />
       <h1 className="register-title">Register</h1>
       <div className="register-field">
         <label>User Name</label>
@@ -71,7 +73,6 @@ function Register() {
         </Button>
         <Button onClick={handleClear}>Clear</Button>
       </div>
-      <Link to="/" className="login-link">Đăng nhập ngay</Link>
     </div>
   );
 }

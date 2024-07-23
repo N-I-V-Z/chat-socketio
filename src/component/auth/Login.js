@@ -1,8 +1,9 @@
 import { message, Input, Button } from "antd";
 import axios from "axios";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import "./Login.css";
+import Header from "../layout/Header";
 const config = require("../config/config");
 
 function Login() {
@@ -20,16 +21,15 @@ function Login() {
       message.error("Vui lòng nhập đầy đủ thông tin");
     } else {
       try {
-        await axios.post(
+        const response = await axios.post(
           `${config.API_ROOT}/api/v1/user/login`,
           {
             userName,
             password,
           }
         );
-
-        message.success("Đăng nhập thành công");
-        navigate("/");
+        const userId = response.data.data.userId;
+        navigate(`/login-success/${userId}`);
       } catch (error) {
         if (error.response.status === 404)
           message.error("Sai tài khoản hoặc mật khẩu");
@@ -40,6 +40,7 @@ function Login() {
 
   return (
     <div className="login-container">
+      <Header />
       <h1 className="login-title">Login</h1>
       <div className="login-field">
         <label>User Name</label>
@@ -64,7 +65,6 @@ function Login() {
         </Button>
         <Button onClick={handleClear}>Clear</Button>
       </div>
-      <Link to="/register" className="register-link">Đăng kí ngay</Link>
     </div>
   );
 }
