@@ -1,32 +1,36 @@
 const Sequelize = require('sequelize');
 module.exports = function(sequelize, DataTypes) {
   return sequelize.define('Message', {
-    messageId: {
+    MessageId: {
       autoIncrement: true,
       type: DataTypes.INTEGER,
       allowNull: false,
       primaryKey: true
     },
-    time: {
-      type: DataTypes.DATE,
-      allowNull: true,
-      defaultValue: Sequelize.Sequelize.fn('getdate')
-    },
-    userId: {
+    SenderId: {
       type: DataTypes.INTEGER,
-      allowNull: true,
+      allowNull: false,
       references: {
         model: 'Users',
         key: 'userId'
       }
     },
-    chatRoom: {
+    ReceiverId: {
       type: DataTypes.INTEGER,
-      allowNull: true,
+      allowNull: false,
       references: {
-        model: 'Chat',
-        key: 'chatRoom'
+        model: 'Users',
+        key: 'userId'
       }
+    },
+    MessageText: {
+      type: DataTypes.TEXT,
+      allowNull: false
+    },
+    Timestamp: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      defaultValue: Sequelize.Sequelize.fn('getdate')
     }
   }, {
     sequelize,
@@ -35,10 +39,10 @@ module.exports = function(sequelize, DataTypes) {
     timestamps: false,
     indexes: [
       {
-        name: "PK__Message__4808B99318447EAA",
+        name: "PK__Message__C87C0C9CE1B8AE90",
         unique: true,
         fields: [
-          { name: "messageId" },
+          { name: "MessageId" },
         ]
       },
     ]

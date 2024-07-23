@@ -2,7 +2,7 @@ POST http://localhost:5000/api/v1/user/register
 Content-Type: application/json
 
 {
-    "userName": "nhan1",
+    "userName": "nhan",
     "password": "1"
 }
 ###
@@ -13,4 +13,17 @@ Content-Type: application/json
     "userName": "nhan",
     "password": "1"
 }
+###
+POST http://localhost:5000/api/v1/user/getAll
+Content-Type: application/json
 
+{
+    "userId": 1
+}
+###
+POST http://localhost:5000/api/v1/user/getUserByUserId
+Content-Type: application/json
+
+{
+    "userId": 1
+}
