@@ -16,7 +16,7 @@ A real-time chat application built with React.js, Node.js, and Socket.IO, featur
 1. Clone the repository:
 
    ```bash
-   git clone [https://github.com/your-username/chat-application.git](https://github.com/N-I-V-Z/chat-socketio.git)
+   git clone https://github.com/N-I-V-Z/chat-socketio.git
    cd chat-socketio
    ```
 
