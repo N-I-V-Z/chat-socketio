@@ -25,6 +25,22 @@ A real-time chat application built with React.js, Node.js, and Socket.IO, featur
    ```bash
    npm install
    ```
+## Database Setup
+
+1. **Configure the database**:
+   - Ensure that you have SQL Server installed and running.
+   - Create a new database named `ChatDb`.
+
+2. **Run the SQL script**:
+   - Navigate to the `db` folder in your project directory.
+   - Execute the `ChatDb.sql` file to set up the database schema and initial data.
+
+   You can use SQL Server Management Studio (SSMS) or another SQL client to run the script. Open the `ChatDb.sql` file and execute it in your SQL Server environment.
+
+3. **Update configuration**:
+   - The database configuration can be found in the file `./server/config/config.js`.
+
+   Make sure the configuration matches your SQL Server setup.
 
 ## Running the Application
 
