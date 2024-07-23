@@ -2,36 +2,51 @@
   display: flex;
   flex-direction: row;
   height: 100vh;
-  font-family: Arial, sans-serif;
+  font-family: 'Roboto', sans-serif;
 }
 
 .sidebar {
-  width: 250px;
-  background-color: #f0f0f0;
-  border-right: 1px solid #ddd;
+  width: 300px;
+  background-color: #2c3e50;
+  color: white;
   padding: 20px;
   box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar h2 {
+  margin-bottom: 20px;
+  font-size: 1.5em;
+  font-weight: bold;
 }
 
 .user-list {
   list-style-type: none;
   padding: 0;
   margin: 0;
+  flex: 1;
+  overflow-y: auto;
 }
 
 .user-item {
-  padding: 10px;
+  padding: 15px;
   cursor: pointer;
-  border-bottom: 1px solid #ddd;
+  border-bottom: 1px solid #34495e;
+  transition: background-color 0.3s;
 }
 
 .user-item:hover {
-  background-color: #e0e0e0;
+  background-color: #34495e;
 }
 
 .user-item.selected {
-  background-color: #007bff;
+  background-color: #2980b9;
   color: white;
+}
+.user-list{
+  scrollbar-width: thin;
+  scrollbar-color: #2980b9 #ecf0f1;
 }
 
 .chat-area {
@@ -39,63 +54,55 @@
   display: flex;
   flex-direction: column;
   padding: 20px;
-  background-color: #ffffff;
+  background-color: #ecf0f1;
 }
 
 .message-list {
-  flex: 1 1;
+  flex: 1;
   overflow-y: auto;
   margin-bottom: 20px;
-  border: 1px solid #ddd;
-  border-radius: 5px;
   padding: 10px;
-  background-color: #fafafa;
+  background-color: #ffffff;
+  border-radius: 10px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
   display: flex;
   flex-direction: column;
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: #2980b9 #ecf0f1; /* Firefox */
 }
 
-/* Tùy chỉnh thanh cuộn cho các trình duyệt Webkit */
 .message-list::-webkit-scrollbar {
-  width: 8px;
+  width: 8px; /* Chrome, Safari, Edge */
 }
 
 .message-list::-webkit-scrollbar-track {
-  background: #f0f0f0;
+  background: #ecf0f1; /* Chrome, Safari, Edge */
 }
 
 .message-list::-webkit-scrollbar-thumb {
-  background: #007bff;
-  border-radius: 10px;
+  background: #2980b9; /* Chrome, Safari, Edge */
+  border-radius: 10px; /* Chrome, Safari, Edge */
 }
 
 .message-list::-webkit-scrollbar-thumb:hover {
-  background: #0056b3;
-}
-
-/* Tùy chỉnh thanh cuộn cho Firefox */
-.message-list {
-  scrollbar-width: thin;
-  scrollbar-color: #007bff #f0f0f0;
+  background: #3498db; /* Chrome, Safari, Edge */
 }
 
 .message {
+  width: -moz-fit-content; /* Firefox */
+  width: fit-content; /* Các trình duyệt khác */
   margin-bottom: 10px;
-  padding: 10px;
-  border-radius: 10px;
-  max-width: 60%;
+  padding: 15px;
+  border-radius: 15px;
   word-wrap: break-word;
-  width: -moz-fit-content; /* Firefox support */
-  width: fit-content;
-}
-
-.message.received {
-  background-color: #e0e0e0;
-  color: black;
+  background-color: #dfdfdf;
   align-self: flex-start;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  transition: background-color 0.3s;
 }
 
 .message.sent {
-  background-color: #007bff;
+  background-color: #3498db;
   color: white;
   align-self: flex-end;
   text-align: right;
@@ -108,21 +115,55 @@
 
 .input-area input[type="text"] {
   flex: 1;
-  padding: 10px;
-  border: 1px solid #ddd;
-  border-radius: 5px;
+  padding: 15px;
+  border: none;
+  border-radius: 25px;
+  margin-right: 10px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.input-area input[type="text"]:focus {
+  outline: none;
+  background-color: #ffffff;
 }
 
 .input-area button {
-  margin-left: 10px;
-  padding: 10px 20px;
+  padding: 15px 20px;
   border: none;
-  background-color: #007bff;
-  color: #fff;
-  border-radius: 5px;
+  background-color: #2980b9;
+  color: white;
+  border-radius: 25px;
   cursor: pointer;
+  transition: background-color 0.3s;
 }
 
 .input-area button:hover {
-  background-color: #0056b3;
+  background-color: #3498db;
+}
+
+.btn-logout {
+  display: flex;
+  align-items: center;
+  padding: 10px;
+  margin-top: 20px;
+  color: #ff4d4d;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  width: -moz-fit-content; /* Firefox */
+  width: fit-content;
+}
+
+.btn-logout:hover {
+  background-color: #e60000;
+  color: white;
+}
+
+.btn-logout svg {
+  margin-right: 8px;
+}
+.top-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
 }
