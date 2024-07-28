@@ -22,9 +22,20 @@ A real-time chat application built with React.js, Node.js, and Socket.IO, featur
 
 2. Install dependencies:
 
+- Install dependences for Front-end
+
    ```bash
+   cd client
    npm install
    ```
+
+- Install dependences for Back-end
+
+   ```bash
+   cd server
+   npm install
+   ```
+
 ## Database Setup
 
 1. **Configure the database**:
@@ -47,12 +58,14 @@ A real-time chat application built with React.js, Node.js, and Socket.IO, featur
 1. Start the backend server:
 
    ```bash
-   npm run be
+   cd server
+   npm start
    ```
 
 2. Start the frontend application:
 
    ```bash
+   cd client
    npm start
    ```
 
