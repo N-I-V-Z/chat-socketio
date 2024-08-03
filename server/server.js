@@ -5,12 +5,12 @@ const cors = require('cors');
 const http = require('http');
 const socketIo = require('socket.io');
 const initRouters = require('./routes'); // Đảm bảo initRouters tồn tại và được cấu hình đúng
-
+require('dotenv').config();
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: "http://localhost:3000",
+    origin: process.env.CLIENT_URL,
     methods: ["GET", "POST", "PUT", "DELETE"],
   },
 });
@@ -19,7 +19,7 @@ app.use(express.static('public'));
 
 // CORS Configuration
 app.use(cors({
-  origin: "http://localhost:3000",
+  origin: process.env.CLIENT_URL,
   methods: ["GET", "POST", "PUT", "DELETE"],
 }));
 
