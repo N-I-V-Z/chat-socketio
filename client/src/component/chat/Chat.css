@@ -6,7 +6,7 @@
 }
 
 .sidebar {
-  width: 300px;
+  width: 260px;
   background-color: #2c3e50;
   color: white;
   padding: 20px;
@@ -92,6 +92,7 @@
 .message {
   width: -moz-fit-content; /* Firefox */
   width: fit-content; /* Các trình duyệt khác */
+  max-width: 40%;
   margin-bottom: 10px;
   padding: 15px;
   border-radius: 15px;
@@ -107,6 +108,7 @@
   color: white;
   align-self: flex-end;
   text-align: right;
+  max-width: 40%;
 }
 
 .input-area {
@@ -189,4 +191,8 @@
 
 .video-call-btn svg {
   margin-right: 8px;
+}
+.video-call-container video {
+  width: 100%;
+  height: auto;
 }
