@@ -5,11 +5,13 @@ import axios from "axios";
 import config from "../config/config";
 import "./Chat.css";
 import { CiLogout } from "react-icons/ci";
+import { FaVideo } from "react-icons/fa6";
 import { useNavigate } from "react-router-dom";
 import { logout } from "../store/actions/authAction";
 import { Modal } from "antd";
+import VideoCall from "../videoCall/VideoCall";
 
-const socket = io("http://localhost:5000");
+const socket = io(`${config.API_ROOT}`);
 
 const Chat = () => {
   const [receiverId, setReceiverId] = useState("");
@@ -17,6 +19,10 @@ const Chat = () => {
   const [messages, setMessages] = useState([]);
   const { userId } = useSelector((state) => state.auth);
   const [userList, setUserList] = useState([]);
+  const [signalingData, setSignalingData] = useState(null);
+  const [isInCall, setIsInCall] = useState(false);
+  const [isInitiator, setIsInitiator] = useState(false);
+  const [callRequested, setCallRequested] = useState(false);
   const messageListEndRef = useRef(null);
   const navigate = useNavigate();
   const dispatch = useDispatch();
@@ -28,8 +34,39 @@ const Chat = () => {
       setMessages((prevMessages) => [...prevMessages, { senderId, message }]);
     });
 
+    socket.on("signal", (data) => {
+      setSignalingData(data);
+    });
+
+    socket.on("videoCallRequest", ({ from }) => {
+      Modal.confirm({
+        title: `${from} muốn gọi video`,
+        okText: 'Chấp nhận',
+        cancelText: 'Từ chối',
+        onOk() {
+          setIsInCall(true);
+          setIsInitiator(false);
+          setCallRequested(true);
+        },
+      });
+    });
+
+    socket.on("callAccepted", () => {
+      setIsInCall(true);
+      setIsInitiator(true);
+    });
+
+    socket.on("callEnded", () => {
+      setIsInCall(false);
+      setSignalingData(null);
+    });
+
     return () => {
       socket.off("receiveMessage");
+      socket.off("signal");
+      socket.off("videoCallRequest");
+      socket.off("callAccepted");
+      socket.off("callEnded");
     };
   }, [userId]);
 
@@ -118,6 +155,22 @@ const Chat = () => {
     navigate(`/`);
   };
 
+  const requestVideoCall = () => {
+    socket.emit("videoCallRequest", { from: userId, to: receiverId });
+    setIsInCall(true);
+    setIsInitiator(true);
+  };
+
+  const endCall = () => {
+    setIsInCall(false);
+    setSignalingData(null);
+    socket.emit("endCall", { to: receiverId });
+  };
+
+  const handleSignalData = (data) => {
+    socket.emit("signal", data);
+  };
+
   return (
     <div className="container">
       <div className="sidebar">
@@ -138,14 +191,25 @@ const Chat = () => {
       </div>
 
       <div className="chat-area">
-      <div className="top-bar">
+        <div className="top-bar">
+          <div onClick={requestVideoCall} className="video-call-btn">
+            <FaVideo />
+            Video Call
+          </div>
           <div className="btn-logout" onClick={showConfirm}>
             <CiLogout />
             Logout
           </div>
         </div>
-        {receiverId ? (
-          <>
+        {isInCall ? (
+          <VideoCall
+            isInitiator={isInitiator}
+            signalingData={signalingData}
+            onSignalData={handleSignalData}
+            onEndCall={endCall}
+          />
+        ) : receiverId ? (
+          <>          
             <div className="message-list">
               {messages.map((msg, index) => (
                 <div
