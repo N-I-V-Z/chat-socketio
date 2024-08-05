@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import "./Login.css";
 import Header from "../layout/Header";
-const config = require("../config/config");
+import config from "../config/config";
 
 function Login() {
   const [userName, setUserName] = useState("");
@@ -20,7 +20,7 @@ function Login() {
     if (!userName || !password) {
       message.error("Vui lòng nhập đầy đủ thông tin");
     } else {
-      try {
+      try {        
         const response = await axios.post(
           `${config.API_ROOT}/api/v1/user/login`,
           {
@@ -30,8 +30,8 @@ function Login() {
         );
         const userId = response.data.data.userId;
         navigate(`/login-success/${userId}`);
-      } catch (error) {
-        if (error.response.status === 404)
+      } catch (error) {        
+        if (error.response?.status === 404)
           message.error("Sai tài khoản hoặc mật khẩu");
         else message.error("Có lỗi xảy ra vui lòng thử lại sau...");
       }

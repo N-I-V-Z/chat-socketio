@@ -1,13 +1,14 @@
-const express = require('express');
-const session = require('express-session');
-const bodyParser = require('body-parser');
-const cors = require('cors');
-const http = require('http');
-const socketIo = require('socket.io');
-const initRouters = require('./routes'); // Đảm bảo initRouters tồn tại và được cấu hình đúng
-require('dotenv').config();
+const express = require("express");
+const session = require("express-session");
+const bodyParser = require("body-parser");
+const cors = require("cors");
+const http = require("http");
+const socketIo = require("socket.io");
+const initRouters = require("./routes");
+require("dotenv").config();
 const app = express();
 const server = http.createServer(app);
+
 const io = socketIo(server, {
   cors: {
     origin: process.env.CLIENT_URL,
@@ -15,21 +16,25 @@ const io = socketIo(server, {
   },
 });
 
-app.use(express.static('public'));
+app.use(express.static("public"));
 
 // CORS Configuration
-app.use(cors({
-  origin: process.env.CLIENT_URL,
-  methods: ["GET", "POST", "PUT", "DELETE"],
-}));
+app.use(
+  cors({
+    origin: process.env.CLIENT_URL,
+    methods: ["GET", "POST", "PUT", "DELETE"],
+  })
+);
 
 // Session Configuration
-app.use(session({
-  secret: "MusicPlayer",
-  resave: false,
-  saveUninitialized: true,
-  cookie: { secure: process.env.NODE_ENV === 'production' } // Chỉ bật secure cookie khi ở môi trường sản xuất
-}));
+app.use(
+  session({
+    secret: "ChatRealTime",
+    resave: false,
+    saveUninitialized: true,
+    cookie: { secure: false },
+  })
+);
 
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -39,34 +44,75 @@ initRouters(app);
 let users = {}; // Lưu trữ socket ID của người dùng
 
 io.on("connection", (socket) => {
-  // Đăng ký người dùng với socket ID của họ
+  // lưu user khi kết nối
   socket.on("register", (userId) => {
     users[userId] = socket.id;
   });
 
-  // Xử lý gửi tin nhắn
+  // xử lý việc gửi tin
   socket.on("sendMessage", ({ senderId, receiverId, message }) => {
-    // Gửi tin nhắn đến người nhận
     if (users[receiverId]) {
       io.to(users[receiverId]).emit("receiveMessage", { senderId, message });
     }
-    // Gửi tin nhắn đến người gửi
     io.to(users[senderId]).emit("receiveMessage", { senderId, message });
   });
 
-  // Xử lý ngắt kết nối
-  socket.on("disconnect", () => {
-    // Xóa người dùng khỏi danh sách khi họ ngắt kết nối
-    for (const [key, value] of Object.entries(users)) {
-      if (value === socket.id) {
-        delete users[key];
-        break;
-      }
+  // gửi yêu cầu call video
+  socket.on("videoCallRequest", ({ from, to }) => {
+    if (users[to]) {
+      io.to(users[to]).emit("videoCallRequest", { from });
     }
+  });
+
+  // chấp nhận yêu cầu call video
+  socket.on("callAccepted", ({ from, to }) => {
+    if (users[to]) {
+      io.to(users[to]).emit("callAccepted", { from });
+    }
+  });
+
+  // từ chối yêu cầu call video
+  socket.on("callRejected", ({ to }) => {
+    if (users[to]) {
+      io.to(users[to]).emit("callRejected");
+    }
+  });
+
+  // hủy cuộc gọi khi đang chờ gọi
+  socket.on("callEnded", ({ to }) => {
+    if (users[to]) {
+      io.to(users[to]).emit("callEnded");
+    }
+  });
+  // gửi liên kết peer cho đối phương
+  socket.on("offer", ({ offer, to }) => {
+    if (users[to]) {
+      io.to(users[to]).emit("offer", { offer });
+    }
+  });
+  // sau khi nhận được offer thì sẽ đưa lại liên kết peer cho đối phương
+  socket.on("answer", ({ answer, to }) => {
+    if (users[to]) {
+      io.to(users[to]).emit("answer", { answer });
+    }
+  });
+
+  socket.on("ice-candidate", ({ iceCandidate, to }) => {
+    if (users[to]) {
+      io.to(users[to]).emit("ice-candidate", { iceCandidate });
+    }
+  });
+
+  socket.on("disconnect", () => {
+    Object.keys(users).forEach((userId) => {
+      if (users[userId] === socket.id) {
+        delete users[userId];
+      }
+    });
   });
 });
 
-const PORT = process.env.PORT || 5000; // Sử dụng PORT từ biến môi trường nếu có
+const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`Server is running at http://localhost:${PORT}`);
 });
