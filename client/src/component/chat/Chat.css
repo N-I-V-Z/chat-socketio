@@ -196,10 +196,3 @@
   width: 100%;
   height: auto;
 }
-.video-call-container {
-  display: flex;
-  flex-wrap: nowrap;
-  flex-direction: row;
-  justify-content: center;
-  align-items: center;
-}

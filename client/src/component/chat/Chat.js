@@ -366,6 +366,7 @@ const Chat = () => {
             Hủy
           </Button>,
         ]}
+        width={800}
       >
         <div className="video-call-container">
           <video ref={localVideoRef} autoPlay muted></video>
