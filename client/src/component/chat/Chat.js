@@ -177,7 +177,7 @@ const Chat = () => {
 
     socket.on("ice-candidate", async (candidate) => {
       if (!peerConnection) return;
-
+      if (!candidate.iceCandidate) return;
       try {
         const iceCandidate = candidate.iceCandidate;
         await peerConnection.addIceCandidate(new RTCIceCandidate(iceCandidate));
