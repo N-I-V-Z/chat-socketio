@@ -10,6 +10,7 @@ A real-time chat application built with React.js, Node.js, and Socket.IO, featur
 - User list display with selectable users.
 - Persistent message storage.
 - User authentication and logout functionality.
+- Call.
 - Call video.
 
 ## Installation
@@ -88,11 +89,15 @@ A real-time chat application built with React.js, Node.js, and Socket.IO, featur
 4. **Send a message**:
    - Type your message in the input field and press Enter or click the "Send" button to send the message.
   
-5. **Call Video**:
+5. **Call**:
+   - Click "Call" button to send a request to call.
+   - After request is accepted, call popup will be displayed.
+  
+6. **Call Video**:
    - Click "Video Call" button to send a request to call video.
    - After request is accepted, video call popup will be displayed.
 
-5. **Logout**:
+77. **Logout**:
    - Click the "Logout" button to log out and return to the login page.
 
 ## Contributing
