@@ -20,7 +20,7 @@ const Chat = () => {
   const dispatch = useDispatch();
   // thông tin người dùng, room
   const [receiverId, setReceiverId] = useState("");
-  const { userId } = useSelector((state) => state.auth);
+  const { user } = useSelector((state) => state.auth);
   const [userList, setUserList] = useState([]);
   // liên quan đến tin nhắn
   const [message, setMessage] = useState("");
@@ -89,19 +89,23 @@ const Chat = () => {
       setReceiverId(from);
       setIsCallModalVisible(true);
       // gửi yêu cầu đã được chấp nhận về cho người kia
-      socket.emit("callAccepted", { from: userId, to: from, video: video });
+      socket.emit("callAccepted", {
+        from: user.userId,
+        to: from,
+        video: video,
+      });
       startCall(video);
     };
     // người dùng tự động đăng kí vào một mảng tạm được lưu ở server
-    socket.emit("register", userId);
+    socket.emit("register", user.userId);
     // nhận tin nhắn
     socket.on("receiveMessage", ({ senderId, message }) => {
       setMessages((prevMessages) => [...prevMessages, { senderId, message }]);
     });
     // nhận yêu cầu call video
-    socket.on("videoCallRequest", ({ from, video }) => {
+    socket.on("videoCallRequest", ({ from, name, video }) => {
       Modal.confirm({
-        title: `Bạn có muốn nhận cuộc gọi ${video ? "video" : ""} từ ${from}?`,
+        title: `Bạn có muốn nhận cuộc gọi ${video ? "video" : ""} từ ${name}?`,
         okText: "Nghe",
         cancelText: "Từ chối",
         onOk() {
@@ -173,7 +177,6 @@ const Chat = () => {
 
     socket.on("ice-candidate", async (candidate) => {
       if (!peerConnection) return;
-      console.log(peerConnection.remoteDescription);
 
       try {
         const iceCandidate = candidate.iceCandidate;
@@ -193,7 +196,7 @@ const Chat = () => {
       socket.off("answer");
       socket.off("ice-candidate");
     };
-  }, [userId, peerConnection, receiverId, startCall]);
+  }, [user, peerConnection, receiverId, startCall]);
 
   useEffect(() => {
     // lấy list user đã được lưu
@@ -201,7 +204,7 @@ const Chat = () => {
       try {
         const response = await axios.post(
           `${config.API_ROOT}/api/v1/user/getAll`,
-          { userId }
+          { userId: user.userId }
         );
         setUserList(response.data.data);
       } catch (error) {
@@ -209,7 +212,7 @@ const Chat = () => {
       }
     };
     fetchUserList();
-  }, [userId]);
+  }, [user]);
 
   useEffect(() => {
     // lấy lại những tin nhắn cũ trong phòng
@@ -218,7 +221,7 @@ const Chat = () => {
         try {
           const response = await axios.post(
             `${config.API_ROOT}/api/v1/message/getAllMessageOfRoom`,
-            { senderId: userId, receiverId }
+            { senderId: user.userId, receiverId }
           );
           setMessages(
             response.data.data.map((m) => ({
@@ -232,7 +235,7 @@ const Chat = () => {
       };
       fetchMessages();
     }
-  }, [receiverId, userId]);
+  }, [receiverId, user]);
 
   // cuộn xuống cuối khi có tin nhắn mới
   useEffect(() => {
@@ -242,13 +245,17 @@ const Chat = () => {
   // xử lý gửi tin nhắn
   const sendMessage = async () => {
     if (message && receiverId) {
-      socket.emit("sendMessage", { senderId: userId, receiverId, message });
+      socket.emit("sendMessage", {
+        senderId: user.userId,
+        receiverId,
+        message,
+      });
       setMessage("");
       try {
         const response = await axios.post(
           `${config.API_ROOT}/api/v1/message/addMessage`,
           {
-            senderId: userId,
+            senderId: user.userId,
             receiverId,
             message,
           }
@@ -292,7 +299,8 @@ const Chat = () => {
   // gửi yêu cầu call video
   const requestVideoCall = ({ video }) => {
     socket.emit("videoCallRequest", {
-      from: userId,
+      from: user.userId,
+      name: user.userName,
       to: receiverId,
       video: video,
     });
@@ -372,7 +380,7 @@ const Chat = () => {
                 <div
                   key={index}
                   className={`message ${
-                    msg.senderId === userId ? "sent" : "received"
+                    msg.senderId === user.userId ? "sent" : "received"
                   }`}
                 >
                   {msg.message}

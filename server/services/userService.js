@@ -3,7 +3,7 @@ const db = require("../models");
 const userService = {
   getUserByUserId: async (userId) => {
     try {
-      const response = await db.Users.findByPk(parseInt(userId));
+      const response = await db.Users.findOne({ where: { userId: userId } });
       return response;
     } catch (error) {
       console.log("Error at userService.getUserByUserId()", error);

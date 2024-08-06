@@ -20,7 +20,7 @@ function Login() {
     if (!userName || !password) {
       message.error("Vui lòng nhập đầy đủ thông tin");
     } else {
-      try {        
+      try {
         const response = await axios.post(
           `${config.API_ROOT}/api/v1/user/login`,
           {
@@ -28,9 +28,9 @@ function Login() {
             password,
           }
         );
-        const userId = response.data.data.userId;
+        const userId = response.data.data.userId;        
         navigate(`/login-success/${userId}`);
-      } catch (error) {        
+      } catch (error) {
         if (error.response?.status === 404)
           message.error("Sai tài khoản hoặc mật khẩu");
         else message.error("Có lỗi xảy ra vui lòng thử lại sau...");

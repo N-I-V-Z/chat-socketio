@@ -58,10 +58,9 @@ io.on("connection", (socket) => {
   });
 
   // gửi yêu cầu call video
-  socket.on("videoCallRequest", ({ from, to, video }) => {
-    
+  socket.on("videoCallRequest", ({ from, name, to, video }) => {
     if (users[to]) {
-      io.to(users[to]).emit("videoCallRequest", { from, video });
+      io.to(users[to]).emit("videoCallRequest", { from, name, video });
     }
   });
 
