@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import io from "socket.io-client";
 import axios from "axios";
@@ -29,7 +29,56 @@ const Chat = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
 
+  const startCall = useCallback(async () => {
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+    });
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        socket.emit("ice-candidate", {
+          iceCandidate: event.candidate,
+          to: receiverId,
+        });
+      }
+    };
+
+    pc.ontrack = (event) => {
+      remoteVideoRef.current.srcObject = event.streams[0];
+    };
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true,
+      });
+
+      localVideoRef.current.srcObject = stream;
+
+      stream.getTracks().forEach((track) => {
+        if (pc.signalingState !== "closed") {
+          pc.addTrack(track, stream);
+        }
+      });
+      setPeerConnection(pc);
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      socket.emit("offer", { offer, to: receiverId });
+    } catch (error) {
+      console.error("Error accessing media devices or starting call:", error);
+    }
+  }, [receiverId]);
+
   useEffect(() => {
+    const handleAcceptCall = (from) => {
+      setReceiverId(from);
+      setIsCallModalVisible(true);
+      socket.emit("callAccepted", { from: userId, to: from });
+      startCall();
+    };
+
     socket.emit("register", userId);
 
     socket.on("receiveMessage", ({ senderId, message }) => {
@@ -52,8 +101,8 @@ const Chat = () => {
 
     socket.on("callAccepted", ({ from }) => {
       setReceiverId(from);
-      startCall();
       setCalling(false);
+      startCall();
       setIsCallModalVisible(true);
     });
 
@@ -78,29 +127,40 @@ const Chat = () => {
 
     socket.on("offer", async ({ offer }) => {
       if (!peerConnection) return;
-      await peerConnection.setRemoteDescription(
-        new RTCSessionDescription(offer)
-      );
-      const answer = await peerConnection.createAnswer();
-      await peerConnection.setLocalDescription(answer);
-      console.log("offer");
 
-      socket.emit("answer", { answer, to: receiverId });
+      try {
+        await peerConnection.setRemoteDescription(
+          new RTCSessionDescription(offer)
+        );
+
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+
+        socket.emit("answer", { answer, to: receiverId });
+      } catch (error) {
+        console.log(error);
+      }
     });
 
     socket.on("answer", async ({ answer }) => {
       if (!peerConnection) return;
-      await peerConnection.setRemoteDescription(
-        new RTCSessionDescription(answer)
-      );
-      console.log("answer");
+
+      try {
+        await peerConnection.setRemoteDescription(
+          new RTCSessionDescription(answer)
+        );
+      } catch (error) {
+        console.log(error);
+      }
     });
 
     socket.on("ice-candidate", async (candidate) => {
       if (!peerConnection) return;
+
       try {
-        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-        console.log("candidate");
+        await peerConnection.addIceCandidate(
+          new RTCIceCandidate(candidate.iceCandidate)
+        );
       } catch (error) {
         console.error("Error adding ICE candidate:", error);
       }
@@ -116,7 +176,7 @@ const Chat = () => {
       socket.off("answer");
       socket.off("ice-candidate");
     };
-  }, [userId, peerConnection]);
+  }, [userId, peerConnection, receiverId, startCall]);
 
   useEffect(() => {
     const fetchUserList = async () => {
@@ -213,13 +273,6 @@ const Chat = () => {
     setCalling(true);
   };
 
-  const handleAcceptCall = (from) => {
-    setReceiverId(from);
-    setIsCallModalVisible(true);
-    socket.emit("callAccepted", { from: userId, to: from });
-    startCall();
-  };
-
   const handleCallCancel = () => {
     setIsCallModalVisible(false);
     socket.emit("callEnded", { to: receiverId });
@@ -237,51 +290,6 @@ const Chat = () => {
     }
     setCalling(false);
     setIsCallModalVisible(false);
-  };
-
-  const startCall = async () => {
-    const pc = new RTCPeerConnection({
-      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-    });
-
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        socket.emit("ice-candidate", {
-          iceCandidate: event.candidate,
-          to: receiverId,
-        });
-      }
-    };
-
-    pc.ontrack = (event) => {
-      remoteVideoRef.current.srcObject = event.streams[0];
-    };
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true,
-      });
-
-      localVideoRef.current.srcObject = stream;
-
-      stream.getTracks().forEach((track) => {
-        if (pc.signalingState !== "closed") {
-          pc.addTrack(track, stream);
-        }
-      });
-      if (pc) {
-        setPeerConnection(pc);
-      } else {
-        console.error("PeerConnection is null or undefined.");
-      }
-
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      socket.emit("offer", { offer, to: receiverId });
-    } catch (error) {
-      console.error("Error accessing media devices or starting call:", error);
-    }
   };
 
   return (
@@ -349,7 +357,6 @@ const Chat = () => {
           </div>
         )}
       </div>
-
       <Modal
         title="Cuộc gọi video"
         visible={isCallModalVisible}
@@ -359,7 +366,6 @@ const Chat = () => {
             Hủy
           </Button>,
         ]}
-        width={800}
       >
         <div className="video-call-container">
           <video ref={localVideoRef} autoPlay muted></video>

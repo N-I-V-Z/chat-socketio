@@ -44,7 +44,6 @@ initRouters(app);
 let users = {}; // Lưu trữ socket ID của người dùng
 
 io.on("connection", (socket) => {
-  console.log("User connected:", socket.id);
   // lưu user khi kết nối
   socket.on("register", (userId) => {
     users[userId] = socket.id;
@@ -55,6 +54,7 @@ io.on("connection", (socket) => {
     if (users[receiverId]) {
       io.to(users[receiverId]).emit("receiveMessage", { senderId, message });
     }
+    io.to(users[senderId]).emit("receiveMessage", { senderId, message });
   });
 
   // gửi yêu cầu call video
@@ -97,16 +97,13 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("ice-candidate", (candidate) => {
-    const { iceCandidate, to } = candidate;
-
+  socket.on("ice-candidate", ({ iceCandidate, to }) => {
     if (users[to]) {
-      io.to(users[to]).emit("ice-candidate", iceCandidate);
+      io.to(users[to]).emit("ice-candidate", { iceCandidate });
     }
   });
 
   socket.on("disconnect", () => {
-    console.log("User disconnected:", socket.id);
     Object.keys(users).forEach((userId) => {
       if (users[userId] === socket.id) {
         delete users[userId];
