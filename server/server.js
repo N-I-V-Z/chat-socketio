@@ -58,16 +58,17 @@ io.on("connection", (socket) => {
   });
 
   // gửi yêu cầu call video
-  socket.on("videoCallRequest", ({ from, to }) => {
+  socket.on("videoCallRequest", ({ from, to, video }) => {
+    
     if (users[to]) {
-      io.to(users[to]).emit("videoCallRequest", { from });
+      io.to(users[to]).emit("videoCallRequest", { from, video });
     }
   });
 
   // chấp nhận yêu cầu call video
-  socket.on("callAccepted", ({ from, to }) => {
+  socket.on("callAccepted", ({ from, to, video }) => {
     if (users[to]) {
-      io.to(users[to]).emit("callAccepted", { from });
+      io.to(users[to]).emit("callAccepted", { from, video });
     }
   });
 
