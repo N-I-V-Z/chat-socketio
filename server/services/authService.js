@@ -7,6 +7,7 @@ const jwt = require("jsonwebtoken");
 const db = require("../models");
 const httpError = require("../utils/httpError");
 const { hashPassword, verifyAndUpgradePassword } = require("./passwordService");
+const auditLogService = require("./auditLogService");
 
 const REFRESH_COOKIE = "refreshToken";
 const REFRESH_TOKEN_TTL_DAYS = Number(
@@ -36,6 +37,7 @@ function serializeUser(user) {
   return {
     userId: user.userId,
     userName: user.userName,
+    role: user.role || "user",
   };
 }
 
@@ -115,8 +117,22 @@ async function createRefreshSession(userId, res, familyId = randomUUID()) {
 
 async function register(userName, password) {
   const passwordHash = await hashPassword(password);
-  const user = await db.Users.create({ userName, password: passwordHash });
-  return serializeUser(user);
+  return db.sequelize.transaction(async (transaction) => {
+    const user = await db.Users.create(
+      { userName, password: passwordHash },
+      { transaction }
+    );
+    await auditLogService.recordEvent(
+      {
+        eventType: auditLogService.EVENT_TYPES.USER_REGISTERED,
+        actorUserId: user.userId,
+        actorUserName: user.userName,
+        outcome: "success",
+      },
+      { transaction }
+    );
+    return serializeUser(user);
+  });
 }
 
 async function authenticate(userName, password) {
@@ -212,13 +228,30 @@ async function refreshSession(token, res) {
 
 async function revokeRefreshSession(token) {
   if (!token) {
-    return;
+    return null;
+  }
+
+  const storedToken = await db.RefreshToken.findOne({
+    attributes: ["userId"],
+    where: {
+      tokenHash: hashRefreshToken(token),
+      revokedAt: null,
+    },
+  });
+  if (!storedToken) {
+    return null;
   }
 
   await db.RefreshToken.update(
     { revokedAt: new Date() },
-    { where: { tokenHash: hashRefreshToken(token), revokedAt: null } }
+    {
+      where: {
+        tokenHash: hashRefreshToken(token),
+        revokedAt: null,
+      },
+    }
   );
+  return storedToken.userId;
 }
 
 module.exports = {

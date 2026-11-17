@@ -1,5 +1,6 @@
 const { Op } = require("sequelize");
 const db = require("../models");
+const auditLogService = require("./auditLogService");
 
 const messageService = {
   getAllMessageOfRoom: async (userId, receiverId) =>
@@ -14,10 +15,24 @@ const messageService = {
     }),
 
   addMessage: async (senderId, receiverId, message) =>
-    db.Message.create({
-      SenderId: senderId,
-      ReceiverId: receiverId,
-      MessageText: message,
+    db.sequelize.transaction(async (transaction) => {
+      const savedMessage = await db.Message.create(
+        {
+          SenderId: senderId,
+          ReceiverId: receiverId,
+          MessageText: message,
+        },
+        { transaction }
+      );
+      await auditLogService.recordEvent(
+        {
+          eventType: auditLogService.EVENT_TYPES.MESSAGE_SENT,
+          actorUserId: senderId,
+          targetUserId: receiverId,
+        },
+        { transaction }
+      );
+      return savedMessage;
     }),
 };
 
