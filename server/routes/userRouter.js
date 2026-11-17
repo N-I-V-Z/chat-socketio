@@ -2,28 +2,28 @@ const authController = require("../controller/authController");
 const userController = require("../controller/userController");
 const requireAccessToken = require("../middleware/requireAccessToken");
 const requireTrustedOrigin = require("../middleware/requireTrustedOrigin");
-const authRateLimiter = require("../middleware/authRateLimiter");
+const authRateLimiters = require("../middleware/authRateLimiter");
 const router = require("express").Router();
 
 router.post(
   "/login",
   requireTrustedOrigin,
-  authRateLimiter,
-  authController.login
+  authRateLimiters.login,
+  authController.login,
 );
 
 router.post(
   "/register",
   requireTrustedOrigin,
-  authRateLimiter,
-  authController.register
+  authRateLimiters.register,
+  authController.register,
 );
 
 router.post(
   "/refresh",
   requireTrustedOrigin,
-  authRateLimiter,
-  authController.refresh
+  authRateLimiters.refresh,
+  authController.refresh,
 );
 
 router.post("/logout", requireTrustedOrigin, authController.logout);
