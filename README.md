@@ -9,8 +9,10 @@ A real-time chat application built with React.js, Node.js, and Socket.IO, featur
 - Real-time messaging between two users.
 - User list display with selectable users.
 - Persistent message storage.
+- Per-contact unread counts, per-message read receipts, and message timestamps.
 - User authentication and logout functionality.
 - Admin dashboard for user presence and audit events.
+- Kafka-backed chat events with a SQL Server transactional outbox.
 - Redis server-side cache and TanStack Query client-side cache.
 - Call.
 - Call video.
@@ -32,7 +34,7 @@ A real-time chat application built with React.js, Node.js, and Socket.IO, featur
    cp .env.example .env
    ```
 
-4. Build and start the client, server, and SQL Server:
+4. Build and start the client, server, SQL Server, Redis, and Kafka:
 
    ```bash
    docker compose up --build
@@ -40,9 +42,9 @@ A real-time chat application built with React.js, Node.js, and Socket.IO, featur
 
    Open `http://localhost:3000`. The API is available at `http://localhost:5000`.
 
-The server creates the `ChatDb` database when needed and runs Sequelize migrations before starting. The initial migration creates the current `Users` and `Message` schema, and skips tables that already exist. SQL Server data is persisted in the `sqlserver_data` Docker volume.
+The server creates the `ChatDb` database when needed and runs Sequelize migrations before starting. The initial migration creates the current `Users` and `Message` schema, and skips tables that already exist. SQL Server data is persisted in the `sqlserver_data` Docker volume; Kafka data is persisted in `kafka_data`. The single-node KRaft broker is intended for local development, not as a highly available production cluster.
 
-Stop the containers with `docker compose down`. This keeps the database volume. To permanently remove the database data as well, use `docker compose down --volumes`.
+Stop the containers with `docker compose down`. This keeps the SQL Server and Kafka volumes. To permanently remove both data sets as well, use `docker compose down --volumes`.
 
 Access tokens expire after 15 minutes. Refresh tokens are rotated, stored only as SHA-256 hashes in the database, and sent to the browser as an `HttpOnly` cookie. Set `COOKIE_SECURE=true` when serving over HTTPS. New passwords are bcrypt-hashed, and the auth migration hashes existing plaintext passwords. The auth migration adds a unique username index, so resolve any duplicate usernames in an existing database before starting the new version.
 
@@ -58,11 +60,27 @@ Docker Compose starts Redis on the private application network; its port is not 
 
 The server caches the user directory for 60 seconds and each conversation-history page for 30 seconds. Conversation entries include message text and are volatile: they are not written to disk; successful writes invalidate the latest page. If Redis is unavailable, the server logs the failure and loads data from SQL Server instead. For local development, `REDIS_URL` is optional; leave it unset to run without Redis, or point it to a Redis instance reachable by the server.
 
+The Socket.IO Redis adapter fans events out across server replicas. When Redis is not ready during startup, the server reports that the adapter is unavailable and continues with in-process Socket.IO delivery.
+
+## Notifications and read state
+
+SQL Server remains authoritative for messages, read receipts, and unread counts. A message, the sender's read receipt, and a `chat.message.created` outbox row are committed in one database transaction. The relay publishes outbox rows to Kafka and marks them published only after broker acknowledgement; failed delivery is retried with bounded backoff. Kafka delivery is at-least-once, so clients deduplicate messages by `MessageId`.
+
+Kafka events contain identifiers rather than message bodies. Consumers load the message from SQL Server and emit it to authenticated Socket.IO user rooms. If Kafka is unavailable, message writes continue to persist in SQL Server and the outbox is retried after Kafka reconnects. Unread totals are recalculated from SQL Server on reconnect; per-user unread data is not stored in the shared user-directory cache.
+
+The authenticated conversation API exposes unread counts per peer and accepts a `upToMessageId` cursor to mark messages read. The cursor must belong to the conversation, and receipt writes are idempotent. Existing messages are backfilled as read for current participants during migration because their historical read state is unknown. The chat marks a cursor after its message becomes sufficiently visible, displays unread badges beside contacts, and shows “Đã xem” for the latest outgoing message the other participant has read. Group-chat UI is not included.
+
+- `GET /api/v1/conversations/unread` returns the authenticated user's unread counts.
+- `POST /api/v1/conversations/:conversationId/read` accepts `{ "upToMessageId": 123 }`.
+- Socket.IO emits `conversationRead` to the other conversation participants after a read update.
+
+Message times use the browser's local time in `HH:mm` format. Messages are grouped under “Hôm nay”, “Hôm qua”, a Vietnamese weekday for recent days, or `dd/MM/yyyy` for older dates. Messages with a null legacy timestamp appear under “Không rõ thời gian” and do not receive a fabricated time.
+
 The client uses TanStack Query to cache chat and admin responses in browser memory. Chat history uses 30-message pages and loads earlier messages when scrolling to the top while preserving the visible scroll position. Queries are considered fresh for up to 30 seconds by default and unused data is garbage-collected after five minutes. Logging out clears the client query cache.
 
 ## Local Development
 
-The database can still be started with Docker while running the client and server directly. Put `DB_HOST=localhost`, `DB_PORT=1433`, `DB_USER=sa`, `DB_PASSWORD`, `DB_NAME=ChatDb`, and a random `JWT_ACCESS_SECRET` of at least 32 bytes in the root `.env` file. For local HTTP, use `COOKIE_SECURE=false`. Then run:
+The infrastructure can be started with Docker while running the client and server directly. Put `DB_HOST=localhost`, `DB_PORT=1433`, `DB_USER=sa`, `DB_PASSWORD`, `DB_NAME=ChatDb`, `KAFKA_BROKERS=localhost:29092`, and a random `JWT_ACCESS_SECRET` of at least 32 bytes in the root `.env` file. For local HTTP, use `COOKIE_SECURE=false`. Start the database, Redis, and Kafka with `docker compose up -d db redis kafka`, then run:
 
 ```bash
 cd server
