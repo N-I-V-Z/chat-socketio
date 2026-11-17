@@ -35,7 +35,7 @@ function AuthenticatedLayout() {
 
   const handleLogout = async () => {
     try {
-      await api.post("/api/v1/user/logout");
+      await api.post("/api/v1/auth/logout");
     } catch (error) {
       console.error("Could not revoke the refresh token", error);
       toast("Đăng xuất không thành công. Vui lòng thử lại.", "error");

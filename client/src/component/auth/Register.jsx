@@ -40,7 +40,7 @@ function Register() {
 
     setIsSubmitting(true);
     try {
-      await api.post("/api/v1/user/register", {
+      await api.post("/api/v1/auth/register", {
         userName: userName.trim(),
         password,
       });

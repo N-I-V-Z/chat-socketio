@@ -71,7 +71,7 @@ function refreshCookieOptions() {
     httpOnly: true,
     secure,
     sameSite: "strict",
-    path: "/api/v1/user",
+    path: "/api/v1/auth",
     maxAge: REFRESH_TTL_MS,
   };
 }

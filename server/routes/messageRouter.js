@@ -1,11 +1,10 @@
-const messageController = require('../controller/messageController')
+const messageController = require("../controller/messageController");
 const requireAccessToken = require("../middleware/requireAccessToken");
 const router = require("express").Router();
 
 router.use(requireAccessToken);
 
-router.post('/getAllMessageOfRoom', messageController.getAllMessageOfRoom);
-
-router.post('/addMessage', messageController.addMessage);
+router.get("/", messageController.listMessages);
+router.post("/", messageController.createMessage);
 
 module.exports = router;
