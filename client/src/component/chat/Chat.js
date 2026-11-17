@@ -119,10 +119,10 @@ const Chat = () => {
         message: variables.message,
         messageId: savedMessage.MessageId,
       });
-      setMessage("");
       queryClient.invalidateQueries({ queryKey });
     },
-    onError: () => {
+    onError: (_error, variables) => {
+      setMessage((currentMessage) => currentMessage || variables.message);
       notification.error({
         message: "Máy chủ đang lỗi...",
       });
@@ -345,6 +345,7 @@ const Chat = () => {
         receiverId: normalizedReceiverId,
         message: text,
       });
+      setMessage("");
     }
   };
 
