@@ -270,12 +270,6 @@ const Chat = () => {
         variables.conversationId,
         savedMessage,
       );
-      socket.emit("sendMessage", {
-        receiverId: variables.receiverId,
-        conversationId: variables.conversationId,
-        message: variables.message,
-        messageId: savedMessage.MessageId,
-      });
     },
     onError: (_error, variables) => {
       setMessage((currentMessage) => currentMessage || variables.message);

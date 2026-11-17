@@ -45,6 +45,7 @@ test("Socket.IO message updates the corresponding cached conversation once", () 
       ConversationId: 44,
       SenderId: 9,
       MessageText: "reply",
+      Timestamp: null,
     },
   ]);
   expect(appendSocketMessage(queryClient, 4, event)).toBe(true);

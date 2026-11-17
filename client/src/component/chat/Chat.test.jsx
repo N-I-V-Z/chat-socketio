@@ -293,11 +293,9 @@ test("sends through the conversation API and keeps one composer focus ring", asy
     expect(api.post).toHaveBeenCalledWith("/api/v1/conversations/55/messages", {
       message: "Hello",
     });
-    expect(mockSocket.emit).toHaveBeenCalledWith("sendMessage", {
-      receiverId: 9,
-      conversationId: 55,
-      message: "Hello",
-      messageId: 3,
-    });
   });
+  expect(mockSocket.emit).not.toHaveBeenCalledWith(
+    "sendMessage",
+    expect.anything(),
+  );
 });

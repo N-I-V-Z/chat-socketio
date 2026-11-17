@@ -94,6 +94,7 @@ function appendSocketMessage(queryClient, currentUserId, event) {
     ConversationId: conversationId,
     SenderId: senderId,
     MessageText: event.message,
+    Timestamp: event.timestamp ?? null,
   });
 }
 

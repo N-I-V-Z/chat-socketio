@@ -13,7 +13,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q \"SELECT 1\" || exit 1",
+          '/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$$MSSQL_SA_PASSWORD" -C -Q "SELECT 1" || exit 1',
         ]
       interval: 5s
       timeout: 3s
@@ -40,6 +40,39 @@ services:
       timeout: 3s
       retries: 10
 
+  kafka:
+    image: apache/kafka:3.9.0
+    environment:
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    ports:
+      - "29092:29092"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
   server:
     build:
       context: ./server
@@ -52,6 +85,8 @@ services:
       DB_PASSWORD: ${MSSQL_SA_PASSWORD:?Set MSSQL_SA_PASSWORD in the root .env file}
       DB_NAME: ChatDb
       REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_CONSUMER_GROUP: chat-notifications-v1
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?Set JWT_ACCESS_SECRET in the root .env file}
       NODE_ENV: production
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
@@ -59,6 +94,10 @@ services:
       - "5000:5000"
     depends_on:
       db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
         condition: service_healthy
 
   client:
@@ -73,3 +112,4 @@ services:
 
 volumes:
   sqlserver_data:
+  kafka_data:
