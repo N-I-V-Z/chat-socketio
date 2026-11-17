@@ -50,30 +50,43 @@ function AppRoutes() {
     };
   }, [dispatch, navigate, queryClient]);
 
+  if (!authReady) {
+    return (
+      <main className="grid min-h-dvh place-items-center px-6">
+        <div
+          role="status"
+          className="flex items-center gap-4 rounded-2xl border border-line bg-surface px-5 py-4 shadow-panel"
+        >
+          <span
+            aria-hidden="true"
+            className="size-5 animate-spin rounded-full border-2 border-accent/20 border-t-accent motion-reduce:animate-none"
+          />
+          <p className="text-sm font-semibold text-ink">
+            Đang khôi phục phiên đăng nhập...
+          </p>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <Routes>
       <Route
         path="/"
-        element={
-          !authReady ? null : isLoggedIn ? <Navigate to="/chat" replace /> : <Login />
-        }
+        element={isLoggedIn ? <Navigate to="/chat" replace /> : <Login />}
       />
       <Route
         path="/register"
-        element={
-          !authReady ? null : isLoggedIn ? <Navigate to="/chat" replace /> : <Register />
-        }
+        element={isLoggedIn ? <Navigate to="/chat" replace /> : <Register />}
       />
       <Route
         path="/chat"
-        element={
-          !authReady ? null : isLoggedIn ? <Chat /> : <Navigate to="/" replace />
-        }
+        element={isLoggedIn ? <Chat /> : <Navigate to="/" replace />}
       />
       <Route
         path="/admin"
         element={
-          !authReady ? null : isLoggedIn && isAdmin ? (
+          isLoggedIn && isAdmin ? (
             <AdminDashboard />
           ) : isLoggedIn ? (
             <Navigate to="/chat" replace />
