@@ -37,6 +37,55 @@ function formatDate(value) {
   }).format(date);
 }
 
+function getActorName(log) {
+  return (
+    log.actorUserName ||
+    (log.actorUserId ? `ID ${log.actorUserId}` : "Không xác định")
+  );
+}
+
+function getOutcomeLabel(outcome) {
+  if (outcome === "failure") {
+    return { label: "Thất bại", className: "font-semibold text-danger" };
+  }
+  if (outcome === "success") {
+    return { label: "Thành công", className: "font-semibold text-success" };
+  }
+  return { label: "Không rõ", className: "text-muted" };
+}
+
+function UserRole({ role }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex min-h-7 items-center rounded-lg px-2.5 text-xs font-semibold",
+        role === "admin"
+          ? "bg-accent/10 text-accent"
+          : "bg-surface-muted text-muted",
+      )}
+    >
+      {role === "admin" ? "Admin" : "User"}
+    </span>
+  );
+}
+
+function UserPresence({ isOnline }) {
+  return (
+    <span className="inline-flex items-center gap-2">
+      <span
+        aria-hidden="true"
+        className={cn(
+          "size-2 rounded-full",
+          isOnline ? "bg-success" : "bg-surface-muted",
+        )}
+      />
+      <span className={isOnline ? "font-medium text-success" : "text-muted"}>
+        {isOnline ? "Đang online" : "Offline"}
+      </span>
+    </span>
+  );
+}
+
 function LoadingRows({ columns }) {
   return (
     <tr>
@@ -53,6 +102,21 @@ function LoadingRows({ columns }) {
         </div>
       </td>
     </tr>
+  );
+}
+
+function LoadingCards() {
+  return (
+    <div className="grid gap-3 py-4" role="status">
+      {[0, 1, 2].map((row) => (
+        <span
+          aria-hidden="true"
+          className="block h-24 animate-pulse rounded-xl bg-surface-muted motion-reduce:animate-none"
+          key={row}
+        />
+      ))}
+      <span className="sr-only">Đang tải dữ liệu</span>
+    </div>
   );
 }
 
@@ -111,7 +175,7 @@ function AdminDashboard() {
   };
 
   return (
-    <main className="min-h-dvh bg-canvas">
+    <main className="h-full min-h-0 overflow-y-auto bg-canvas">
       <header className="border-b border-line bg-surface">
         <div className="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-6 sm:px-6 sm:py-8 md:flex-row md:items-center md:justify-between lg:px-8">
           <div className="min-w-0">
@@ -122,16 +186,43 @@ function AdminDashboard() {
               Xin chào {user?.userName}. Audit log được lưu trong 30 ngày.
             </p>
           </div>
-          <Link
-            to="/chat"
-            className="inline-flex min-h-11 w-fit items-center justify-center rounded-xl border border-line bg-surface px-4 py-2 text-sm font-semibold text-ink transition hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            Quay lại chat
-          </Link>
         </div>
       </header>
 
       <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
+        <div
+          aria-label="Khu vực quản trị"
+          className="mb-5 flex w-full gap-1 rounded-xl border border-line bg-surface p-1 sm:w-fit"
+          role="group"
+        >
+          <button
+            type="button"
+            aria-pressed={activeTab === "users"}
+            onClick={() => changeTab("users")}
+            className={cn(
+              "min-h-11 flex-1 rounded-lg px-4 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:flex-none",
+              activeTab === "users"
+                ? "bg-accent/10 text-accent"
+                : "text-muted hover:text-ink",
+            )}
+          >
+            Người dùng
+          </button>
+          <button
+            type="button"
+            aria-pressed={activeTab === "logs"}
+            onClick={() => changeTab("logs")}
+            className={cn(
+              "min-h-11 flex-1 rounded-lg px-4 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:flex-none",
+              activeTab === "logs"
+                ? "bg-accent/10 text-accent"
+                : "text-muted hover:text-ink",
+            )}
+          >
+            Audit log
+          </button>
+        </div>
+
         {activeQueryError && !errorDismissed && (
           <div
             className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-danger/30 bg-danger/5 px-4 py-3 text-sm text-danger"
@@ -167,39 +258,6 @@ function AdminDashboard() {
         )}
 
         <section className="overflow-hidden rounded-panel border border-line bg-surface shadow-panel">
-          <div
-            aria-label="Khu vực quản trị"
-            className="flex gap-1 border-b border-line px-3 pt-3 sm:px-5"
-            role="group"
-          >
-            <button
-              type="button"
-              aria-pressed={activeTab === "users"}
-              onClick={() => changeTab("users")}
-              className={cn(
-                "min-h-11 rounded-t-xl border-b-2 px-4 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                activeTab === "users"
-                  ? "border-accent text-accent"
-                  : "border-transparent text-muted hover:text-ink",
-              )}
-            >
-              Người dùng
-            </button>
-            <button
-              type="button"
-              aria-pressed={activeTab === "logs"}
-              onClick={() => changeTab("logs")}
-              className={cn(
-                "min-h-11 rounded-t-xl border-b-2 px-4 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                activeTab === "logs"
-                  ? "border-accent text-accent"
-                  : "border-transparent text-muted hover:text-ink",
-              )}
-            >
-              Audit log
-            </button>
-          </div>
-
           {activeTab === "users" ? (
             <div>
               <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
@@ -215,7 +273,55 @@ function AdminDashboard() {
                   {users.length} người dùng
                 </p>
               </div>
-              <div className="overflow-x-auto">
+              <div className="px-4 pb-4 xl:hidden">
+                {activeQueryLoading ? (
+                  <LoadingCards />
+                ) : activeQueryError && users.length === 0 ? (
+                  <p
+                    className="rounded-xl border border-line p-5 text-center text-sm text-muted"
+                    role="alert"
+                  >
+                    Danh sách người dùng hiện chưa khả dụng.
+                  </p>
+                ) : users.length === 0 ? (
+                  <div className="rounded-xl border border-line p-5 text-center">
+                    <p className="font-semibold text-ink">
+                      Chưa có người dùng.
+                    </p>
+                    <p className="mt-1 text-sm text-muted">
+                      Dữ liệu sẽ xuất hiện tại đây.
+                    </p>
+                    <Link
+                      to="/chat"
+                      className="mt-4 inline-block text-sm font-semibold text-accent underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                      Quay lại trò chuyện
+                    </Link>
+                  </div>
+                ) : (
+                  <ul aria-label="Tài khoản người dùng" className="grid gap-3">
+                    {users.map((listedUser) => (
+                      <li
+                        key={listedUser.userId}
+                        className="rounded-xl border border-line bg-surface p-4"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <h3 className="break-words font-semibold text-ink">
+                              {listedUser.userName}
+                            </h3>
+                            <div className="mt-2">
+                              <UserRole role={listedUser.role} />
+                            </div>
+                          </div>
+                          <UserPresence isOnline={listedUser.isOnline} />
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="hidden overflow-x-auto xl:block">
                 <table className="w-full min-w-[36rem] border-collapse text-left text-sm">
                   <thead className="bg-surface-muted/70 text-xs font-semibold text-muted">
                     <tr>
@@ -266,40 +372,10 @@ function AdminDashboard() {
                             {listedUser.userName}
                           </th>
                           <td className="px-5 py-4">
-                            <span
-                              className={cn(
-                                "inline-flex min-h-7 items-center rounded-lg px-2.5 text-xs font-semibold",
-                                listedUser.role === "admin"
-                                  ? "bg-accent/10 text-accent"
-                                  : "bg-surface-muted text-muted",
-                              )}
-                            >
-                              {listedUser.role === "admin" ? "Admin" : "User"}
-                            </span>
+                            <UserRole role={listedUser.role} />
                           </td>
                           <td className="px-5 py-4">
-                            <span className="inline-flex items-center gap-2">
-                              <span
-                                aria-hidden="true"
-                                className={cn(
-                                  "size-2 rounded-full",
-                                  listedUser.isOnline
-                                    ? "bg-success"
-                                    : "bg-surface-muted",
-                                )}
-                              />
-                              <span
-                                className={
-                                  listedUser.isOnline
-                                    ? "font-medium text-success"
-                                    : "text-muted"
-                                }
-                              >
-                                {listedUser.isOnline
-                                  ? "Đang online"
-                                  : "Offline"}
-                              </span>
-                            </span>
+                            <UserPresence isOnline={listedUser.isOnline} />
                           </td>
                         </tr>
                       ))
@@ -352,7 +428,101 @@ function AdminDashboard() {
                   <span role="status">Đang cập nhật...</span>
                 )}
               </div>
-              <div className="overflow-x-auto">
+              <div className="px-4 pb-4 xl:hidden">
+                {activeQueryLoading ? (
+                  <LoadingCards />
+                ) : activeQueryError && logs.items.length === 0 ? (
+                  <p
+                    className="rounded-xl border border-line p-5 text-center text-sm text-muted"
+                    role="alert"
+                  >
+                    Audit log hiện chưa khả dụng.
+                  </p>
+                ) : logs.items.length === 0 ? (
+                  <div className="rounded-xl border border-line p-5 text-center">
+                    <p className="font-semibold text-ink">Chưa có audit log.</p>
+                    <p className="mt-1 text-sm text-muted">
+                      Dữ liệu sẽ xuất hiện tại đây.
+                    </p>
+                    {eventType ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEventType("");
+                          setPage(1);
+                        }}
+                        className="mt-4 text-sm font-semibold text-accent underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                      >
+                        Xóa bộ lọc
+                      </button>
+                    ) : (
+                      <Link
+                        to="/chat"
+                        className="mt-4 inline-block text-sm font-semibold text-accent underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                      >
+                        Quay lại trò chuyện
+                      </Link>
+                    )}
+                  </div>
+                ) : (
+                  <ul aria-label="Lịch sử audit" className="grid gap-3">
+                    {logs.items.map((log) => {
+                      const outcome = getOutcomeLabel(log.outcome);
+                      return (
+                        <li
+                          key={log.eventId}
+                          className="rounded-xl border border-line bg-surface p-4"
+                        >
+                          <article>
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <h3 className="break-words text-sm font-bold text-ink">
+                                  {eventLabels[log.eventType] || log.eventType}
+                                </h3>
+                                <time
+                                  dateTime={log.occurredAt}
+                                  className="mt-1 block text-xs text-muted"
+                                >
+                                  {formatDate(log.occurredAt)}
+                                </time>
+                              </div>
+                              <span
+                                className={cn(
+                                  "shrink-0 text-sm",
+                                  outcome.className,
+                                )}
+                              >
+                                {outcome.label}
+                              </span>
+                            </div>
+                            <dl className="mt-4 grid gap-3 border-t border-line pt-3 text-sm">
+                              <div className="grid gap-1">
+                                <dt className="text-xs font-semibold text-muted">
+                                  Người thực hiện
+                                </dt>
+                                <dd className="break-words text-ink">
+                                  {getActorName(log)}
+                                </dd>
+                              </div>
+                              <div className="grid gap-1">
+                                <dt className="text-xs font-semibold text-muted">
+                                  Người liên quan
+                                </dt>
+                                <dd className="break-words text-muted">
+                                  {log.targetUserId
+                                    ? `ID ${log.targetUserId}`
+                                    : "Không có"}
+                                </dd>
+                              </div>
+                            </dl>
+                          </article>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+              <div className="hidden overflow-x-auto xl:block">
                 <table className="w-full min-w-[58rem] border-collapse text-left text-sm">
                   <thead className="bg-surface-muted/70 text-xs font-semibold text-muted">
                     <tr>
@@ -425,10 +595,7 @@ function AdminDashboard() {
                             {eventLabels[log.eventType] || log.eventType}
                           </th>
                           <td className="px-5 py-4 text-ink">
-                            {log.actorUserName ||
-                              (log.actorUserId
-                                ? `ID ${log.actorUserId}`
-                                : "Không xác định")}
+                            {getActorName(log)}
                           </td>
                           <td className="px-5 py-4 text-muted">
                             {log.targetUserId
@@ -436,17 +603,11 @@ function AdminDashboard() {
                               : "Không có"}
                           </td>
                           <td className="px-5 py-4">
-                            {log.outcome === "failure" ? (
-                              <span className="font-semibold text-danger">
-                                Thất bại
-                              </span>
-                            ) : log.outcome === "success" ? (
-                              <span className="font-semibold text-success">
-                                Thành công
-                              </span>
-                            ) : (
-                              <span className="text-muted">Không rõ</span>
-                            )}
+                            <span
+                              className={getOutcomeLabel(log.outcome).className}
+                            >
+                              {getOutcomeLabel(log.outcome).label}
+                            </span>
                           </td>
                         </tr>
                       ))

@@ -1,5 +1,11 @@
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { configureStore } from "@reduxjs/toolkit";
 import { Provider } from "react-redux";
@@ -99,13 +105,26 @@ afterEach(() => {
 test("admin can view users and metadata-only audit events", async () => {
   renderDashboard();
 
-  expect(await screen.findByText("member")).toBeInTheDocument();
-  expect(screen.getByText("Đang online")).toBeInTheDocument();
+  expect(await screen.findAllByText("member")).toHaveLength(2);
+  expect(screen.getAllByText("Đang online")).toHaveLength(2);
+  expect(
+    screen.getByRole("list", { name: "Tài khoản người dùng" }),
+  ).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: "Audit log" }));
 
+  const auditList = await screen.findByRole("list", {
+    name: "Lịch sử audit",
+  });
   expect(
-    await screen.findByText("Gửi tin nhắn (chỉ metadata)"),
+    within(auditList).getByRole("heading", {
+      name: "Gửi tin nhắn (chỉ metadata)",
+    }),
+  ).toBeInTheDocument();
+  expect(
+    within(screen.getByRole("table")).getByRole("row", {
+      name: /Gửi tin nhắn \(chỉ metadata\)/,
+    }),
   ).toBeInTheDocument();
   await waitFor(() => {
     expect(api.get).toHaveBeenCalledWith(
