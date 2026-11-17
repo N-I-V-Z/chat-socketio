@@ -41,16 +41,14 @@ app.use(
     origin: clientUrl,
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE"],
-  })
+  }),
 );
 app.use(cookieParser());
 app.use(bodyParser.json({ limit: "1mb" }));
 app.use(bodyParser.urlencoded({ extended: true, limit: "1mb" }));
 
 initRouters(app);
-app.use((req, res) =>
-  failure(res, 404, "ROUTE_NOT_FOUND", "Route not found")
-);
+app.use((req, res) => failure(res, 404, "ROUTE_NOT_FOUND", "Route not found"));
 app.use(errorHandler);
 
 function userRoom(userId) {
@@ -114,11 +112,10 @@ io.on("connection", (socket) => {
       console.error("Could not record user connection:", error);
     });
 
-  const remainingTokenLifetime =
-    accessTokenExpiresAt * 1000 - Date.now();
+  const remainingTokenLifetime = accessTokenExpiresAt * 1000 - Date.now();
   const expiryTimer = setTimeout(
     () => socket.disconnect(true),
-    Math.max(remainingTokenLifetime, 0)
+    Math.max(remainingTokenLifetime, 0),
   );
   socket.on("disconnect", () => {
     clearTimeout(expiryTimer);
@@ -135,7 +132,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("sendMessage", (payload = {}) => {
-    const { receiverId, message, messageId } = payload || {};
+    const { receiverId, message, messageId, conversationId } = payload || {};
     const recipientId = parseUserId(receiverId);
     if (
       !recipientId ||
@@ -150,6 +147,7 @@ io.on("connection", (socket) => {
       senderId: userId,
       receiverId: recipientId,
       messageId: parseUserId(messageId),
+      conversationId: parseUserId(conversationId),
       message: message.trim(),
     };
     io.to(userRoom(recipientId)).emit("receiveMessage", messageEvent);

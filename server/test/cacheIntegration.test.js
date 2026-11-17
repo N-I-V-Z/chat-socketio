@@ -17,6 +17,21 @@ test("conversation cache keys are stable regardless of participant order", () =>
   assert.throws(() => cacheKeys.conversationKey(0, 7), /valid user IDs/);
 });
 
+test("conversation page keys separate the latest page from cursor pages", () => {
+  assert.equal(
+    cacheKeys.conversationPageKey(12),
+    "messages:conversation:v1:12:latest",
+  );
+  assert.equal(
+    cacheKeys.conversationPageKey(12, 45),
+    "messages:conversation:v1:12:before:45",
+  );
+  assert.throws(
+    () => cacheKeys.conversationPageKey(12, 0),
+    /valid message cursor/,
+  );
+});
+
 test("user list cache stores shared user data and filters the current user", async () => {
   const originalGetOrLoad = cacheService.getOrLoad;
   const originalFindAll = db.Users.findAll;
