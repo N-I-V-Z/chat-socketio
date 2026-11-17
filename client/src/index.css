@@ -1,13 +1,61 @@
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --color-canvas: 247 248 250;
+  --color-surface: 255 255 255;
+  --color-surface-muted: 241 243 246;
+  --color-ink: 37 43 51;
+  --color-muted: 105 116 129;
+  --color-line: 225 229 234;
+  --color-accent: 79 111 146;
+  --color-accent-hover: 64 95 128;
+  --color-accent-foreground: 255 255 255;
+  --color-danger: 177 61 58;
+  --color-success: 37 121 84;
 }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+@layer base {
+  *,
+  *::before,
+  *::after {
+    @apply border-line;
+  }
+
+  html {
+    @apply min-w-[320px] scroll-smooth bg-canvas;
+  }
+
+  body {
+    @apply min-h-[100dvh] bg-canvas font-sans text-ink antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-accent ring-offset-2 ring-offset-canvas;
+  }
+
+  ::selection {
+    @apply bg-accent/20 text-ink;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

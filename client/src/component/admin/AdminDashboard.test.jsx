@@ -1,5 +1,11 @@
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { configureStore } from "@reduxjs/toolkit";
 import { Provider } from "react-redux";
@@ -56,7 +62,7 @@ function renderDashboard() {
           <AdminDashboard />
         </MemoryRouter>
       </Provider>
-    </QueryClientProvider>
+    </QueryClientProvider>,
   );
 }
 
@@ -87,7 +93,7 @@ beforeEach(() => {
                 total: 1,
               },
       },
-    })
+    }),
   );
 });
 
@@ -99,19 +105,94 @@ afterEach(() => {
 test("admin can view users and metadata-only audit events", async () => {
   renderDashboard();
 
-  expect(await screen.findByText("member")).toBeInTheDocument();
-  expect(screen.getByText("Đang online")).toBeInTheDocument();
+  expect(await screen.findAllByText("member")).toHaveLength(2);
+  expect(screen.getAllByText("Đang online")).toHaveLength(2);
+  expect(
+    screen.getByRole("list", { name: "Tài khoản người dùng" }),
+  ).toBeInTheDocument();
 
-  fireEvent.click(screen.getByText("Audit log"));
+  fireEvent.click(screen.getByRole("button", { name: "Audit log" }));
 
-  expect(await screen.findByText("Gửi tin nhắn (chỉ metadata)")).toBeInTheDocument();
+  const auditList = await screen.findByRole("list", {
+    name: "Lịch sử audit",
+  });
+  expect(
+    within(auditList).getByRole("heading", {
+      name: "Gửi tin nhắn (chỉ metadata)",
+    }),
+  ).toBeInTheDocument();
+  expect(
+    within(screen.getByRole("table")).getByRole("row", {
+      name: /Gửi tin nhắn \(chỉ metadata\)/,
+    }),
+  ).toBeInTheDocument();
   await waitFor(() => {
     expect(api.get).toHaveBeenCalledWith(
       "/api/v1/admin/logs",
       expect.objectContaining({
         params: expect.objectContaining({ page: 1, pageSize: 25 }),
-      })
+      }),
     );
   });
   expect(screen.queryByText("private message text")).not.toBeInTheDocument();
+});
+
+test("event filter and pagination update audit log query parameters", async () => {
+  api.get.mockImplementation((path) =>
+    Promise.resolve({
+      data: {
+        data:
+          path === "/api/v1/admin/users"
+            ? []
+            : {
+                items: [],
+                total: 26,
+              },
+      },
+    }),
+  );
+  renderDashboard();
+
+  fireEvent.click(screen.getByRole("button", { name: "Audit log" }));
+  await waitFor(() => {
+    expect(api.get).toHaveBeenCalledWith(
+      "/api/v1/admin/logs",
+      expect.objectContaining({
+        params: expect.objectContaining({ page: 1, pageSize: 25 }),
+      }),
+    );
+  });
+
+  fireEvent.change(screen.getByLabelText("Lọc theo sự kiện"), {
+    target: { value: "message.sent" },
+  });
+  await waitFor(() => {
+    expect(api.get).toHaveBeenCalledWith(
+      "/api/v1/admin/logs",
+      expect.objectContaining({
+        params: expect.objectContaining({
+          page: 1,
+          pageSize: 25,
+          eventType: "message.sent",
+        }),
+      }),
+    );
+  });
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: "Tiếp" })).toBeEnabled();
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Tiếp" }));
+  await waitFor(() => {
+    expect(api.get).toHaveBeenCalledWith(
+      "/api/v1/admin/logs",
+      expect.objectContaining({
+        params: expect.objectContaining({
+          page: 2,
+          pageSize: 25,
+          eventType: "message.sent",
+        }),
+      }),
+    );
+  });
 });
