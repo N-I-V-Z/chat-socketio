@@ -12,7 +12,7 @@ module.exports = {
     const hasUniqueUsername = userIndexes.some(
       (index) =>
         index.unique &&
-        index.fields.some((field) => field.attribute === "userName")
+        index.fields.some((field) => field.attribute === "userName"),
     );
 
     if (!hasUniqueUsername) {
@@ -74,7 +74,7 @@ module.exports = {
 
     const users = await queryInterface.sequelize.query(
       "SELECT [userId], [password] FROM [dbo].[Users]",
-      { type: Sequelize.QueryTypes.SELECT }
+      { type: Sequelize.QueryTypes.SELECT },
     );
 
     for (const user of users) {
@@ -88,7 +88,7 @@ module.exports = {
       await queryInterface.bulkUpdate(
         "Users",
         { password: await hashPassword(user.password) },
-        { userId: user.userId }
+        { userId: user.userId },
       );
     }
   },
@@ -100,7 +100,7 @@ module.exports = {
 
     const userIndexes = await queryInterface.showIndex("Users");
     const usernameIndex = userIndexes.find(
-      (index) => index.name === "UQ_Users_userName"
+      (index) => index.name === "UQ_Users_userName",
     );
     if (usernameIndex) {
       await queryInterface.removeIndex("Users", "UQ_Users_userName");

@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const { QueryTypes } = require("sequelize");
-const migration = require("../migrations/20261120000000-add-conversations");
+const migration = require("../migrations/20261117000005-add-conversations");
 
 function createQueryInterface({
   unmappedCount = 0,

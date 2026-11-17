@@ -46,7 +46,7 @@ Stop the containers with `docker compose down`. This keeps the database volume. 
 
 Access tokens expire after 15 minutes. Refresh tokens are rotated, stored only as SHA-256 hashes in the database, and sent to the browser as an `HttpOnly` cookie. Set `COOKIE_SECURE=true` when serving over HTTPS. New passwords are bcrypt-hashed, and the auth migration hashes existing plaintext passwords. The auth migration adds a unique username index, so resolve any duplicate usernames in an existing database before starting the new version.
 
-The server applies pending Sequelize migrations before starting. The admin migration adds user roles and audit-log storage, promotes the existing `nivz` account to admin, and gives new accounts the `user` role. It does not grant admin access to a newly registered account just because its username is `nivz`.
+The server applies pending Sequelize migrations before starting. Migration filenames use the current date followed by a six-digit sequence. The admin migration adds user roles and audit-log storage, promotes the existing `nivz` account to admin, and gives new accounts the `user` role. It does not grant admin access to a newly registered account just because its username is `nivz`.
 
 Roles are restricted to `user` and `admin` by a named SQL Server `CHECK` constraint. The migration validates existing values before enforcing the constraint, so unexpected role values must be resolved rather than silently converted.
 

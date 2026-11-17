@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const { DataTypes, Op, QueryTypes, Sequelize } = require("sequelize");
-const migration = require("../migrations/20261119000000-constrain-user-role-enum");
+const migration = require("../migrations/20261117000004-constrain-user-role-enum");
 const { USER_ROLES, USER_ROLE_VALUES } = require("../constants/userRole");
 
 function createQueryInterface(existingRoles = []) {

@@ -1,8 +1,11 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const authService = require("../services/authService");
-const { hashPassword, verifyAndUpgradePassword } = require("../services/passwordService");
-const authMigration = require("../migrations/20261117110000-add-refresh-token-storage");
+const {
+  hashPassword,
+  verifyAndUpgradePassword,
+} = require("../services/passwordService");
+const authMigration = require("../migrations/20261117000002-add-refresh-token-storage");
 
 const originalSecret = process.env.JWT_ACCESS_SECRET;
 process.env.JWT_ACCESS_SECRET = "test-secret-with-at-least-thirty-two-bytes";
@@ -40,15 +43,9 @@ test("a legacy plaintext password is upgraded after a successful login", async (
     },
   };
 
-  assert.equal(
-    await verifyAndUpgradePassword(user, "legacy-password"),
-    true
-  );
+  assert.equal(await verifyAndUpgradePassword(user, "legacy-password"), true);
   assert.notEqual(user.password, "legacy-password");
-  assert.equal(
-    await verifyAndUpgradePassword(user, "legacy-password"),
-    true
-  );
+  assert.equal(await verifyAndUpgradePassword(user, "legacy-password"), true);
 });
 
 test("legacy passwords longer than bcrypt's input limit remain verifiable", async () => {
@@ -70,17 +67,13 @@ test("access tokens are signed and reject modified tokens", () => {
   const token = authService.signAccessToken({ userId: 42 });
   assert.deepEqual(authService.verifyAccessToken(token).userId, 42);
   const [header, payload, signature] = token.split(".");
-  const claims = JSON.parse(
-    Buffer.from(payload, "base64url").toString("utf8")
-  );
+  const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
   claims.sub = "43";
   const modifiedPayload = Buffer.from(JSON.stringify(claims)).toString(
-    "base64url"
+    "base64url",
   );
   assert.throws(() =>
-    authService.verifyAccessToken(
-      `${header}.${modifiedPayload}.${signature}`
-    )
+    authService.verifyAccessToken(`${header}.${modifiedPayload}.${signature}`),
   );
 });
 
@@ -116,7 +109,9 @@ test("auth migration stores refresh tokens and hashes legacy user passwords", as
   });
 
   assert.equal(createdTables[0].table, "RefreshTokens");
-  assert.ok(indexes.some((index) => index.unique && index.fields[0] === "userName"));
+  assert.ok(
+    indexes.some((index) => index.unique && index.fields[0] === "userName"),
+  );
   assert.equal(updatedUsers.length, 1);
   assert.equal(updatedUsers[0].where.userId, 1);
   assert.notEqual(updatedUsers[0].values.password, "legacy-password");
