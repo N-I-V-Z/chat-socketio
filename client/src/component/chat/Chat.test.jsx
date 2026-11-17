@@ -1,5 +1,11 @@
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { configureStore } from "@reduxjs/toolkit";
 import { Provider } from "react-redux";
@@ -53,6 +59,26 @@ const mockSocket = {
 };
 
 let queryClient;
+let intersectionObservers;
+
+class MockIntersectionObserver {
+  constructor(callback, options) {
+    this.callback = callback;
+    this.options = options;
+    this.targets = [];
+    intersectionObservers.push(this);
+  }
+
+  observe(target) {
+    this.targets.push(target);
+  }
+
+  disconnect() {}
+
+  trigger(target, intersectionRatio = 0.75) {
+    this.callback([{ target, isIntersecting: true, intersectionRatio }]);
+  }
+}
 
 function renderChat() {
   queryClient = new QueryClient({
@@ -82,6 +108,7 @@ function renderChat() {
 }
 
 beforeEach(() => {
+  intersectionObservers = [];
   Object.defineProperty(window, "matchMedia", {
     writable: true,
     value: () => ({
@@ -91,6 +118,11 @@ beforeEach(() => {
       addEventListener() {},
       removeEventListener() {},
     }),
+  });
+  Object.defineProperty(window, "IntersectionObserver", {
+    configurable: true,
+    writable: true,
+    value: MockIntersectionObserver,
   });
   io.mockReturnValue(mockSocket);
   api.post.mockImplementation((path, payload) => {
@@ -116,29 +148,45 @@ beforeEach(() => {
         },
       });
     }
+    if (path === "/api/v1/conversations/55/read") {
+      return Promise.resolve({
+        data: {
+          data: {
+            conversationId: 55,
+            upToMessageId: payload.upToMessageId,
+            readAt: "2026-01-02T03:04:05Z",
+          },
+        },
+      });
+    }
     return Promise.resolve({ data: { data: {} } });
   });
-  api.get.mockImplementation(() =>
+  api.get.mockImplementation((path) =>
     Promise.resolve({
       data: {
-        data: {
-          items: [
-            {
-              MessageId: 1,
-              ConversationId: 55,
-              SenderId: 7,
-              MessageText: "Tin nhắn của tôi",
-            },
-            {
-              MessageId: 2,
-              ConversationId: 55,
-              SenderId: 9,
-              MessageText: "Tin nhắn của bạn",
-            },
-          ],
-          hasMore: false,
-          nextCursor: null,
-        },
+        data:
+          path === "/api/v1/conversations/unread"
+            ? []
+            : {
+                items: [
+                  {
+                    MessageId: 1,
+                    ConversationId: 55,
+                    SenderId: 7,
+                    MessageText: "Tin nhắn của tôi",
+                    readReceipts: [],
+                  },
+                  {
+                    MessageId: 2,
+                    ConversationId: 55,
+                    SenderId: 9,
+                    MessageText: "Tin nhắn của bạn",
+                    readReceipts: [],
+                  },
+                ],
+                hasMore: false,
+                nextCursor: null,
+              },
       },
     }),
   );
@@ -158,8 +206,10 @@ test("keeps sent and received messages on their respective sides", async () => {
   const sentMessage = await screen.findByText("Tin nhắn của tôi");
   const receivedMessage = await screen.findByText("Tin nhắn của bạn");
 
-  expect(sentMessage.parentElement).toHaveClass("justify-end");
-  expect(receivedMessage.parentElement).toHaveClass("justify-start");
+  expect(sentMessage.closest("[data-chat-message]")).toHaveClass("justify-end");
+  expect(receivedMessage.closest("[data-chat-message]")).toHaveClass(
+    "justify-start",
+  );
   await waitFor(() => {
     expect(api.post).toHaveBeenCalledWith("/api/v1/conversations/direct", {
       otherUserId: 9,
@@ -210,7 +260,10 @@ test("loads older messages on upward scroll and preserves the visible anchor", a
         MessageText: `message-${MessageId}`,
       };
     });
-  api.get.mockImplementation((_path, options) => {
+  api.get.mockImplementation((path, options) => {
+    if (path === "/api/v1/conversations/unread") {
+      return Promise.resolve({ data: { data: [] } });
+    }
     const beforeMessageId = options?.params?.beforeMessageId;
     const items = beforeMessageId === 71 ? makePage(41, 70) : makePage(71, 100);
     return Promise.resolve({
@@ -298,4 +351,92 @@ test("sends through the conversation API and keeps one composer focus ring", asy
     "sendMessage",
     expect.anything(),
   );
+});
+
+test("shows the unread count beside the matching contact", async () => {
+  api.get.mockImplementation((path) =>
+    Promise.resolve({
+      data: {
+        data:
+          path === "/api/v1/conversations/unread"
+            ? [{ conversationId: 55, peerUserId: 9, unreadCount: 2 }]
+            : { items: [], hasMore: false, nextCursor: null },
+      },
+    }),
+  );
+
+  renderChat();
+
+  expect(await screen.findByLabelText("2 tin nhắn chưa đọc")).toHaveTextContent(
+    "2",
+  );
+});
+
+test("marks the highest visible message read once after a short debounce", async () => {
+  renderChat();
+  fireEvent.click(await screen.findByRole("button", { name: /member/ }));
+  await screen.findByText("Tin nhắn của bạn");
+
+  const target = document.querySelector('[data-message-id="2"]');
+  const observer = intersectionObservers.find((item) =>
+    item.targets.includes(target),
+  );
+  expect(observer.options.root).toBe(
+    screen.getByRole("log", { name: "Tin nhắn với member" }),
+  );
+
+  act(() => {
+    observer.trigger(target);
+    observer.trigger(target);
+  });
+
+  await waitFor(() => {
+    expect(api.post).toHaveBeenCalledWith("/api/v1/conversations/55/read", {
+      upToMessageId: 2,
+    });
+  });
+  expect(
+    api.post.mock.calls.filter(
+      ([path]) => path === "/api/v1/conversations/55/read",
+    ),
+  ).toHaveLength(1);
+});
+
+test("shows seen state from read receipts in the message page", async () => {
+  api.get.mockImplementation((path) =>
+    Promise.resolve({
+      data: {
+        data:
+          path === "/api/v1/conversations/unread"
+            ? []
+            : {
+                items: [
+                  {
+                    MessageId: 1,
+                    ConversationId: 55,
+                    SenderId: 7,
+                    MessageText: "Tin nhắn của tôi",
+                    readReceipts: [
+                      { UserId: 9, readAt: "2026-01-02T03:04:05Z" },
+                    ],
+                  },
+                  {
+                    MessageId: 2,
+                    ConversationId: 55,
+                    SenderId: 9,
+                    MessageText: "Tin nhắn của bạn",
+                    readReceipts: [],
+                  },
+                ],
+                hasMore: false,
+                nextCursor: null,
+              },
+      },
+    }),
+  );
+
+  renderChat();
+  fireEvent.click(await screen.findByRole("button", { name: /member/ }));
+
+  expect(await screen.findByText("Đã xem")).toBeInTheDocument();
 });

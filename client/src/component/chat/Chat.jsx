@@ -26,6 +26,7 @@ import { queryKeys } from "../../api/queryKeys";
 import {
   appendConversationMessage,
   appendSocketMessage,
+  applyConversationRead,
 } from "./chatQueryCache";
 import Button from "../ui/Button";
 import Dialog from "../ui/Dialog";
@@ -37,6 +38,8 @@ import { cn } from "../ui/cn";
 const EMPTY_MESSAGES = [];
 const SCROLL_EDGE_PX = 72;
 const BOTTOM_THRESHOLD_PX = 96;
+const READ_RECEIPT_DEBOUNCE_MS = 200;
+const READ_INTERSECTION_THRESHOLD = 0.6;
 
 const Chat = () => {
   const navigate = useNavigate();
@@ -76,6 +79,10 @@ const Chat = () => {
   const initialScrollConversationRef = useRef(null);
   const initialScrollCompletedRef = useRef(false);
   const olderFetchInFlightRef = useRef(false);
+  const pendingReadMessageIdRef = useRef(0);
+  const requestedReadMessageIdRef = useRef(0);
+  const acknowledgedReadMessageIdRef = useRef(0);
+  const readReceiptTimerRef = useRef(null);
   const stopLocalMedia = useCallback(() => {
     const stream = localVideoRef.current?.srcObject;
     stream?.getTracks().forEach((track) => track.stop());
@@ -96,6 +103,16 @@ const Chat = () => {
       : ["chat-users", "disabled"],
     queryFn: async () => {
       const response = await api.post("/api/v1/user/getAll");
+      return response.data.data;
+    },
+    enabled: hasValidUserId,
+  });
+  const unreadSummaryQuery = useQuery({
+    queryKey: hasValidUserId
+      ? queryKeys.unreadSummary(currentUserId)
+      : ["conversation-unread", "disabled"],
+    queryFn: async () => {
+      const response = await api.get("/api/v1/conversations/unread");
       return response.data.data;
     },
     enabled: hasValidUserId,
@@ -161,10 +178,38 @@ const Chat = () => {
           MessageId: item.MessageId,
           senderId: Number(item.SenderId),
           message: item.MessageText,
+          Timestamp: item.Timestamp ?? null,
+          readReceipts: item.readReceipts || [],
         })),
       ) || EMPTY_MESSAGES,
     [messagesQuery.data],
   );
+  const unreadCountByPeer = useMemo(
+    () =>
+      new Map(
+        (unreadSummaryQuery.data || []).map(({ peerUserId, unreadCount }) => [
+          Number(peerUserId),
+          Number(unreadCount),
+        ]),
+      ),
+    [unreadSummaryQuery.data],
+  );
+  const latestSeenMessageId = useMemo(() => {
+    if (!hasValidReceiver) return null;
+    return (
+      messages.reduce((latestId, item) => {
+        if (
+          Number(item.senderId) !== currentUserId ||
+          !item.readReceipts.some(
+            (receipt) => Number(receipt.UserId) === normalizedReceiverId,
+          )
+        ) {
+          return latestId;
+        }
+        return Math.max(latestId, Number(item.MessageId) || 0);
+      }, 0) || null
+    );
+  }, [currentUserId, hasValidReceiver, messages, normalizedReceiverId]);
   const selectedUser = userList.find(
     (listedUser) => Number(listedUser.userId) === normalizedReceiverId,
   );
@@ -256,6 +301,153 @@ const Chat = () => {
     }
   }, [conversationId, hasValidConversationId, messagesQuery.data]);
 
+  useEffect(() => {
+    pendingReadMessageIdRef.current = 0;
+    requestedReadMessageIdRef.current = 0;
+    acknowledgedReadMessageIdRef.current = 0;
+    if (readReceiptTimerRef.current) {
+      clearTimeout(readReceiptTimerRef.current);
+      readReceiptTimerRef.current = null;
+    }
+
+    return () => {
+      if (readReceiptTimerRef.current) {
+        clearTimeout(readReceiptTimerRef.current);
+        readReceiptTimerRef.current = null;
+      }
+    };
+  }, [conversationId]);
+
+  const markReadMutation = useMutation({
+    mutationFn: async ({ targetConversationId, upToMessageId }) => {
+      const response = await api.post(
+        `/api/v1/conversations/${targetConversationId}/read`,
+        { upToMessageId },
+      );
+      return response.data.data;
+    },
+    retry: 1,
+    onSuccess: (readState, variables) => {
+      acknowledgedReadMessageIdRef.current = Math.max(
+        acknowledgedReadMessageIdRef.current,
+        Number(readState.upToMessageId),
+      );
+      applyConversationRead(
+        queryClient,
+        variables.targetConversationId,
+        currentUserId,
+        readState.upToMessageId,
+        readState.readAt,
+      );
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.unreadSummary(currentUserId),
+      });
+    },
+    onError: (_error, variables) => {
+      requestedReadMessageIdRef.current = acknowledgedReadMessageIdRef.current;
+      pendingReadMessageIdRef.current = Math.max(
+        pendingReadMessageIdRef.current,
+        variables.upToMessageId,
+      );
+      toast("Không thể cập nhật trạng thái đã đọc.", "error");
+    },
+  });
+
+  const queueReadReceipt = useCallback(
+    (messageId) => {
+      const parsedMessageId = Number(messageId);
+      if (
+        !hasValidConversationId ||
+        !Number.isSafeInteger(parsedMessageId) ||
+        parsedMessageId < 1 ||
+        parsedMessageId <=
+          Math.max(
+            requestedReadMessageIdRef.current,
+            pendingReadMessageIdRef.current,
+          )
+      ) {
+        return;
+      }
+
+      pendingReadMessageIdRef.current = parsedMessageId;
+      if (readReceiptTimerRef.current) return;
+
+      readReceiptTimerRef.current = setTimeout(() => {
+        readReceiptTimerRef.current = null;
+        const upToMessageId = pendingReadMessageIdRef.current;
+        pendingReadMessageIdRef.current = 0;
+        if (upToMessageId <= requestedReadMessageIdRef.current) return;
+
+        requestedReadMessageIdRef.current = upToMessageId;
+        markReadMutation.mutate({
+          targetConversationId: conversationId,
+          upToMessageId,
+        });
+      }, READ_RECEIPT_DEBOUNCE_MS);
+    },
+    [conversationId, hasValidConversationId, markReadMutation.mutate],
+  );
+
+  useEffect(() => {
+    const container = messageListRef.current;
+    if (!container || !messagesQuery.data) return undefined;
+
+    const messageElements = container.querySelectorAll(
+      "[data-chat-message][data-message-id]",
+    );
+    if (typeof IntersectionObserver === "undefined") {
+      const markVisibleMessages = () => {
+        const containerBounds = container.getBoundingClientRect();
+        let highestVisibleMessageId = 0;
+        messageElements.forEach((element) => {
+          const bounds = element.getBoundingClientRect();
+          const visibleHeight =
+            Math.min(bounds.bottom, containerBounds.bottom) -
+            Math.max(bounds.top, containerBounds.top);
+          if (
+            visibleHeight > 0 &&
+            visibleHeight / Math.max(bounds.height, 1) >=
+              READ_INTERSECTION_THRESHOLD
+          ) {
+            highestVisibleMessageId = Math.max(
+              highestVisibleMessageId,
+              Number(element.dataset.messageId) || 0,
+            );
+          }
+        });
+        if (highestVisibleMessageId > 0) {
+          queueReadReceipt(highestVisibleMessageId);
+        }
+      };
+
+      markVisibleMessages();
+      container.addEventListener("scroll", markVisibleMessages);
+      return () => container.removeEventListener("scroll", markVisibleMessages);
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const highestVisibleMessageId = entries.reduce(
+          (highestId, entry) =>
+            entry.isIntersecting &&
+            entry.intersectionRatio >= READ_INTERSECTION_THRESHOLD
+              ? Math.max(highestId, Number(entry.target.dataset.messageId) || 0)
+              : highestId,
+          0,
+        );
+        if (highestVisibleMessageId > 0) {
+          queueReadReceipt(highestVisibleMessageId);
+        }
+      },
+      {
+        root: container,
+        threshold: [0, READ_INTERSECTION_THRESHOLD],
+      },
+    );
+    messageElements.forEach((element) => observer.observe(element));
+    return () => observer.disconnect();
+  }, [conversationId, messagesQuery.data, queueReadReceipt]);
+
   const sendMessageMutation = useMutation({
     mutationFn: async ({ conversationId: targetId, message: text }) => {
       const response = await api.post(
@@ -278,6 +470,11 @@ const Chat = () => {
   });
 
   useEffect(() => {
+    const handleConnect = () => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.unreadSummary(currentUserId),
+      });
+    };
     const handleExpiredConnection = async () => {
       try {
         await refreshAccessToken();
@@ -303,16 +500,18 @@ const Chat = () => {
       }
     };
 
+    socket.on("connect", handleConnect);
     socket.on("connect_error", handleConnectError);
     socket.on("disconnect", handleDisconnect);
     socket.connect();
 
     return () => {
+      socket.off("connect", handleConnect);
       socket.off("connect_error", handleConnectError);
       socket.off("disconnect", handleDisconnect);
       socket.disconnect();
     };
-  }, [dispatch, navigate, socket, toast]);
+  }, [currentUserId, dispatch, navigate, queryClient, socket, toast]);
 
   const startCall = useCallback(
     async (video) => {
@@ -386,9 +585,26 @@ const Chat = () => {
   );
 
   useEffect(() => {
-    socket.on("receiveMessage", (event) =>
-      appendSocketMessage(queryClient, currentUserId, event),
-    );
+    const handleReceiveMessage = (event) => {
+      appendSocketMessage(queryClient, currentUserId, event);
+      if (Number(event.senderId) !== currentUserId) {
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.unreadSummary(currentUserId),
+        });
+      }
+    };
+    const handleConversationRead = (event) => {
+      applyConversationRead(
+        queryClient,
+        event.conversationId,
+        event.readerId,
+        event.upToMessageId,
+        event.readAt,
+      );
+    };
+
+    socket.on("receiveMessage", handleReceiveMessage);
+    socket.on("conversationRead", handleConversationRead);
     socket.on("videoCallRequest", (request) => setIncomingCall(request));
     socket.on("callAccepted", ({ from, video }) => {
       setReceiverId(from);
@@ -453,6 +669,7 @@ const Chat = () => {
 
     return () => {
       socket.off("receiveMessage");
+      socket.off("conversationRead");
       socket.off("videoCallRequest");
       socket.off("callAccepted");
       socket.off("callRejected");
@@ -596,6 +813,8 @@ const Chat = () => {
             {userList.map((listedUser) => {
               const isSelected =
                 Number(listedUser.userId) === normalizedReceiverId;
+              const unreadCount =
+                unreadCountByPeer.get(Number(listedUser.userId)) || 0;
               return (
                 <li key={listedUser.userId}>
                   <button
@@ -626,10 +845,30 @@ const Chat = () => {
                     <span className="truncate text-sm font-semibold">
                       {listedUser.userName}
                     </span>
+                    {unreadCount > 0 && (
+                      <span
+                        aria-label={`${unreadCount} tin nhắn chưa đọc`}
+                        className="ml-auto grid min-w-6 place-items-center rounded-full bg-accent px-2 py-0.5 text-xs font-bold tabular-nums text-accent-foreground"
+                      >
+                        {unreadCount > 99 ? "99+" : unreadCount}
+                      </span>
+                    )}
                   </button>
                 </li>
               );
             })}
+            {unreadSummaryQuery.isError && (
+              <li className="px-2 py-3 text-sm text-danger" role="alert">
+                <p>Không thể tải số tin nhắn chưa đọc.</p>
+                <button
+                  type="button"
+                  onClick={() => unreadSummaryQuery.refetch()}
+                  className="mt-2 font-semibold underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                  Thử lại
+                </button>
+              </li>
+            )}
             {!userListQuery.isPending &&
               !userListQuery.isError &&
               userList.length === 0 && (
@@ -779,18 +1018,27 @@ const Chat = () => {
                     <div
                       key={msg.MessageId ?? `${msg.senderId}-${index}`}
                       data-chat-message
+                      data-message-id={msg.MessageId}
                       className={`flex ${isSent ? "justify-end" : "justify-start"}`}
                     >
-                      <p
-                        className={[
-                          "max-w-[85%] whitespace-pre-wrap break-words rounded-2xl px-4 py-3 text-sm leading-6 sm:max-w-[70%]",
-                          isSent
-                            ? "rounded-br-md bg-accent text-accent-foreground"
-                            : "rounded-bl-md bg-surface-muted text-ink",
-                        ].join(" ")}
-                      >
-                        {msg.message}
-                      </p>
+                      <div className="flex max-w-[85%] flex-col sm:max-w-[70%]">
+                        <p
+                          className={[
+                            "whitespace-pre-wrap break-words rounded-2xl px-4 py-3 text-sm leading-6",
+                            isSent
+                              ? "rounded-br-md bg-accent text-accent-foreground"
+                              : "rounded-bl-md bg-surface-muted text-ink",
+                          ].join(" ")}
+                        >
+                          {msg.message}
+                        </p>
+                        {isSent &&
+                          Number(msg.MessageId) === latestSeenMessageId && (
+                            <span className="mt-1 self-end text-xs text-muted">
+                              Đã xem
+                            </span>
+                          )}
+                      </div>
                     </div>
                   );
                 })}

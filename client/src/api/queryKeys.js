@@ -7,6 +7,7 @@ export const queryKeys = {
     ].sort((first, second) => first - second);
     return ["direct-conversation", lowerId, higherId];
   },
+  unreadSummary: (userId) => ["conversation-unread", Number(userId)],
   conversation: (conversationId) => ["conversation", Number(conversationId)],
   adminUsers: ["admin", "users"],
   adminLogs: (page, pageSize, eventType) => [

@@ -95,7 +95,74 @@ function appendSocketMessage(queryClient, currentUserId, event) {
     SenderId: senderId,
     MessageText: event.message,
     Timestamp: event.timestamp ?? null,
+    readReceipts: [],
   });
 }
 
-export { appendConversationMessage, appendSocketMessage, appendUniqueMessage };
+function applyConversationRead(
+  queryClient,
+  conversationId,
+  readerId,
+  upToMessageId,
+  readAt,
+) {
+  const parsedReaderId = Number(readerId);
+  const parsedCursor = Number(upToMessageId);
+  if (
+    !Number.isSafeInteger(parsedReaderId) ||
+    parsedReaderId < 1 ||
+    !Number.isSafeInteger(parsedCursor) ||
+    parsedCursor < 1
+  ) {
+    return false;
+  }
+
+  const queryKey = queryKeys.conversation(conversationId);
+  const queryData = queryClient.getQueryData(queryKey);
+  if (!queryData || !Array.isArray(queryData.pages)) {
+    return false;
+  }
+
+  let changed = false;
+  const pages = queryData.pages.map((page) => {
+    if (!Array.isArray(page.items)) return page;
+    const items = page.items.map((item) => {
+      if (
+        Number(item.MessageId) > parsedCursor ||
+        Number(item.SenderId) === parsedReaderId
+      ) {
+        return item;
+      }
+
+      const readReceipts = Array.isArray(item.readReceipts)
+        ? item.readReceipts
+        : [];
+      if (
+        readReceipts.some(
+          (receipt) => Number(receipt.UserId) === parsedReaderId,
+        )
+      ) {
+        return item;
+      }
+
+      changed = true;
+      return {
+        ...item,
+        readReceipts: [...readReceipts, { UserId: parsedReaderId, readAt }],
+      };
+    });
+    return items.some((item, index) => item !== page.items[index])
+      ? { ...page, items }
+      : page;
+  });
+
+  if (changed) queryClient.setQueryData(queryKey, { ...queryData, pages });
+  return changed;
+}
+
+export {
+  appendConversationMessage,
+  appendSocketMessage,
+  appendUniqueMessage,
+  applyConversationRead,
+};

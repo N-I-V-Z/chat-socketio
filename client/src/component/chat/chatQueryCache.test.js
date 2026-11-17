@@ -1,5 +1,5 @@
 import { queryKeys } from "../../api/queryKeys";
-import { appendSocketMessage } from "./chatQueryCache";
+import { appendSocketMessage, applyConversationRead } from "./chatQueryCache";
 
 function createQueryClient(initialKey, initialValue) {
   const cache = new Map([[JSON.stringify(initialKey), initialValue]]);
@@ -46,10 +46,44 @@ test("Socket.IO message updates the corresponding cached conversation once", () 
       SenderId: 9,
       MessageText: "reply",
       Timestamp: null,
+      readReceipts: [],
     },
   ]);
   expect(appendSocketMessage(queryClient, 4, event)).toBe(true);
   expect(queryClient.getQueryData(queryKey).pages[0].items).toHaveLength(2);
+});
+
+test("conversation read events update only messages up to the read cursor", () => {
+  const queryKey = queryKeys.conversation(44);
+  const queryClient = createQueryClient(queryKey, {
+    pages: [
+      {
+        items: [
+          { MessageId: 1, SenderId: 4, readReceipts: [] },
+          { MessageId: 2, SenderId: 9, readReceipts: [] },
+          { MessageId: 3, SenderId: 4, readReceipts: [] },
+          { MessageId: 4, SenderId: 4, readReceipts: [] },
+        ],
+      },
+    ],
+  });
+
+  expect(applyConversationRead(queryClient, 44, 9, 3, "read-at")).toBe(true);
+  expect(queryClient.getQueryData(queryKey).pages[0].items).toEqual([
+    {
+      MessageId: 1,
+      SenderId: 4,
+      readReceipts: [{ UserId: 9, readAt: "read-at" }],
+    },
+    { MessageId: 2, SenderId: 9, readReceipts: [] },
+    {
+      MessageId: 3,
+      SenderId: 4,
+      readReceipts: [{ UserId: 9, readAt: "read-at" }],
+    },
+    { MessageId: 4, SenderId: 4, readReceipts: [] },
+  ]);
+  expect(applyConversationRead(queryClient, 44, 9, 3, "read-at")).toBe(false);
 });
 
 test("Socket.IO message for a room not yet cached does not create partial history", () => {
