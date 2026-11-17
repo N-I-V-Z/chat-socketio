@@ -21,6 +21,7 @@ const { failure } = require("./utils/apiResponse");
 const authService = require("./services/authService");
 const auditLogService = require("./services/auditLogService");
 const presenceService = require("./services/presenceService");
+const redisConnection = require("./services/redisConnection");
 const db = require("./models");
 
 const app = express();
@@ -134,7 +135,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("sendMessage", (payload = {}) => {
-    const { receiverId, message } = payload || {};
+    const { receiverId, message, messageId } = payload || {};
     const recipientId = parseUserId(receiverId);
     if (
       !recipientId ||
@@ -145,14 +146,14 @@ io.on("connection", (socket) => {
       return;
     }
 
-    io.to(userRoom(recipientId)).emit("receiveMessage", {
+    const messageEvent = {
       senderId: userId,
+      receiverId: recipientId,
+      messageId: parseUserId(messageId),
       message: message.trim(),
-    });
-    io.to(userRoom(userId)).emit("receiveMessage", {
-      senderId: userId,
-      message: message.trim(),
-    });
+    };
+    io.to(userRoom(recipientId)).emit("receiveMessage", messageEvent);
+    io.to(userRoom(userId)).emit("receiveMessage", messageEvent);
   });
 
   socket.on("videoCallRequest", (payload = {}) => {
@@ -213,6 +214,7 @@ io.on("connection", (socket) => {
 
 const PORT = process.env.PORT || 5000;
 auditLogService.startRetentionCleanup();
+redisConnection.connect();
 server.listen(PORT, () => {
   console.log(`Server is running at http://localhost:${PORT}`);
 });

@@ -7,6 +7,7 @@ import {
   useNavigate,
 } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
+import { useQueryClient } from "@tanstack/react-query";
 import Login from "./component/auth/Login";
 import Register from "./component/auth/Register";
 import Chat from "./component/chat/Chat";
@@ -17,6 +18,7 @@ import { clearAccessToken, refreshAccessToken } from "./api/client";
 function AppRoutes() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const isLoggedIn = useSelector((state) => state.auth.isLoggedIn);
   const isAdmin = useSelector((state) => state.auth.user?.role === "admin");
   const [authReady, setAuthReady] = useState(false);
@@ -25,6 +27,7 @@ function AppRoutes() {
     let active = true;
     const handleAuthExpired = () => {
       clearAccessToken();
+      queryClient.clear();
       dispatch(logout());
       navigate("/", { replace: true });
     };
@@ -45,7 +48,7 @@ function AppRoutes() {
       active = false;
       window.removeEventListener("auth:expired", handleAuthExpired);
     };
-  }, [dispatch, navigate]);
+  }, [dispatch, navigate, queryClient]);
 
   return (
     <Routes>

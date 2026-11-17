@@ -4,6 +4,7 @@ import "@testing-library/jest-dom";
 import { configureStore } from "@reduxjs/toolkit";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import api from "../../api/client";
 import rootReducer from "../store/reduces/rootReducer";
 import AdminDashboard from "./AdminDashboard";
@@ -31,8 +32,13 @@ jest.mock("../../api/client", () => ({
   },
 }));
 
+let queryClient;
+
 function renderDashboard() {
   installMatchMediaMock();
+  queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   const store = configureStore({
     reducer: rootReducer,
     preloadedState: {
@@ -44,11 +50,13 @@ function renderDashboard() {
   });
 
   return render(
-    <Provider store={store}>
-      <MemoryRouter>
-        <AdminDashboard />
-      </MemoryRouter>
-    </Provider>
+    <QueryClientProvider client={queryClient}>
+      <Provider store={store}>
+        <MemoryRouter>
+          <AdminDashboard />
+        </MemoryRouter>
+      </Provider>
+    </QueryClientProvider>
   );
 }
 
@@ -84,6 +92,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  queryClient?.clear();
   jest.clearAllMocks();
 });
 
