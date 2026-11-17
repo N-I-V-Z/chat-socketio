@@ -2,11 +2,13 @@ var DataTypes = require("sequelize").DataTypes;
 var _Message = require("./Message");
 var _Users = require("./Users");
 var _RefreshToken = require("./RefreshToken");
+var _AuditLog = require("./AuditLog");
 
 function initModels(sequelize) {
   var Message = _Message(sequelize, DataTypes);
   var Users = _Users(sequelize, DataTypes);
   var RefreshToken = _RefreshToken(sequelize, DataTypes);
+  var AuditLog = _AuditLog(sequelize, DataTypes);
 
   Message.belongsTo(Users, { as: "Receiver", foreignKey: "ReceiverId"});
   Users.hasMany(Message, { as: "Messages", foreignKey: "ReceiverId"});
@@ -19,6 +21,7 @@ function initModels(sequelize) {
     Message,
     Users,
     RefreshToken,
+    AuditLog,
   };
 }
 module.exports = initModels;
