@@ -28,6 +28,11 @@ import {
   appendSocketMessage,
   applyConversationRead,
 } from "./chatQueryCache";
+import {
+  formatMessageTime,
+  groupMessagesByDay,
+  toValidDate,
+} from "./messageDateFormat";
 import Button from "../ui/Button";
 import Dialog from "../ui/Dialog";
 import { useToast } from "../ui/ToastProvider";
@@ -210,6 +215,7 @@ const Chat = () => {
       }, 0) || null
     );
   }, [currentUserId, hasValidReceiver, messages, normalizedReceiverId]);
+  const messageGroups = useMemo(() => groupMessagesByDay(messages), [messages]);
   const selectedUser = userList.find(
     (listedUser) => Number(listedUser.userId) === normalizedReceiverId,
   );
@@ -1012,36 +1018,61 @@ const Chat = () => {
                       </div>
                     </div>
                   )}
-                {messages.map((msg, index) => {
-                  const isSent = Number(msg.senderId) === currentUserId;
-                  return (
+                {messageGroups.map((group) => (
+                  <React.Fragment key={group.key}>
                     <div
-                      key={msg.MessageId ?? `${msg.senderId}-${index}`}
-                      data-chat-message
-                      data-message-id={msg.MessageId}
-                      className={`flex ${isSent ? "justify-end" : "justify-start"}`}
+                      className="flex items-center justify-center py-2"
+                      role="separator"
+                      aria-label={group.label}
+                      data-message-day
                     >
-                      <div className="flex max-w-[85%] flex-col sm:max-w-[70%]">
-                        <p
-                          className={[
-                            "whitespace-pre-wrap break-words rounded-2xl px-4 py-3 text-sm leading-6",
-                            isSent
-                              ? "rounded-br-md bg-accent text-accent-foreground"
-                              : "rounded-bl-md bg-surface-muted text-ink",
-                          ].join(" ")}
-                        >
-                          {msg.message}
-                        </p>
-                        {isSent &&
-                          Number(msg.MessageId) === latestSeenMessageId && (
-                            <span className="mt-1 self-end text-xs text-muted">
-                              Đã xem
-                            </span>
-                          )}
-                      </div>
+                      <span className="rounded-full bg-surface-muted px-3 py-1 text-xs font-medium text-muted">
+                        {group.label}
+                      </span>
                     </div>
-                  );
-                })}
+                    {group.messages.map((msg, index) => {
+                      const isSent = Number(msg.senderId) === currentUserId;
+                      const date = toValidDate(msg.Timestamp);
+                      const time = formatMessageTime(msg.Timestamp);
+                      const isLatestSeen =
+                        isSent && Number(msg.MessageId) === latestSeenMessageId;
+
+                      return (
+                        <div
+                          key={msg.MessageId ?? `${msg.senderId}-${index}`}
+                          data-chat-message
+                          data-message-id={msg.MessageId}
+                          className={`flex ${isSent ? "justify-end" : "justify-start"}`}
+                        >
+                          <div className="flex max-w-[85%] flex-col sm:max-w-[70%]">
+                            <p
+                              className={[
+                                "whitespace-pre-wrap break-words rounded-2xl px-4 py-3 text-sm leading-6",
+                                isSent
+                                  ? "rounded-br-md bg-accent text-accent-foreground"
+                                  : "rounded-bl-md bg-surface-muted text-ink",
+                              ].join(" ")}
+                            >
+                              {msg.message}
+                            </p>
+                            {(time || isLatestSeen) && (
+                              <div
+                                className={`mt-1 flex items-center gap-2 text-xs tabular-nums text-muted ${isSent ? "justify-end" : "justify-start"}`}
+                              >
+                                {time && date && (
+                                  <time dateTime={date.toISOString()}>
+                                    {time}
+                                  </time>
+                                )}
+                                {isLatestSeen && <span>Đã xem</span>}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </React.Fragment>
+                ))}
               </div>
               <form
                 className="border-t border-line p-3 sm:px-6 sm:py-4"

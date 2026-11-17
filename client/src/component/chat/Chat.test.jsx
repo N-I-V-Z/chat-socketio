@@ -440,3 +440,56 @@ test("shows seen state from read receipts in the message page", async () => {
 
   expect(await screen.findByText("Đã xem")).toBeInTheDocument();
 });
+
+test("groups dated messages and leaves legacy null timestamps without a clock", async () => {
+  const timestamp = new Date();
+  timestamp.setHours(8, 5, 0, 0);
+  api.get.mockImplementation((path) =>
+    Promise.resolve({
+      data: {
+        data:
+          path === "/api/v1/conversations/unread"
+            ? []
+            : {
+                items: [
+                  {
+                    MessageId: 1,
+                    ConversationId: 55,
+                    SenderId: 7,
+                    MessageText: "Tin nhắn có giờ",
+                    Timestamp: timestamp.toISOString(),
+                    readReceipts: [],
+                  },
+                  {
+                    MessageId: 2,
+                    ConversationId: 55,
+                    SenderId: 9,
+                    MessageText: "Tin nhắn cũ",
+                    Timestamp: null,
+                    readReceipts: [],
+                  },
+                ],
+                hasMore: false,
+                nextCursor: null,
+              },
+      },
+    }),
+  );
+
+  renderChat();
+  fireEvent.click(await screen.findByRole("button", { name: /member/ }));
+
+  expect(
+    await screen.findByRole("separator", { name: "Hôm nay" }),
+  ).toBeInTheDocument();
+  expect(screen.getByText("08:05")).toHaveAttribute(
+    "dateTime",
+    timestamp.toISOString(),
+  );
+  expect(
+    screen.getByRole("separator", { name: "Không rõ thời gian" }),
+  ).toBeInTheDocument();
+  expect(screen.getByText("Tin nhắn cũ").parentElement).not.toHaveTextContent(
+    /08:05/,
+  );
+});
