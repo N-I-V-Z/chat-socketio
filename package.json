@@ -1,0 +1,21 @@
+{
+  "name": "chat-socketio-repo",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "prepare": "husky",
+    "format:staged": "lint-staged",
+    "test:server": "npm --prefix server test",
+    "test:client": "npm --prefix client test -- --watchAll=false",
+    "build:client": "npm --prefix client run build",
+    "validate": "npm run test:server && npm run test:client && npm run build:client"
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx,json,css,scss,md,yml,yaml,html}": "prettier --write"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^15.5.2",
+    "prettier": "^3.6.2"
+  }
+}
