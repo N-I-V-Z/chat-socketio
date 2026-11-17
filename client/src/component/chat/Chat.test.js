@@ -135,3 +135,32 @@ test("keeps sent and received messages on their respective sides", async () => {
     );
   });
 });
+
+test("switches between the contact list and conversation view", async () => {
+  renderChat();
+
+  const contacts = await screen.findByRole("complementary", {
+    name: "Danh sách liên hệ",
+  });
+  const conversation = screen.getByRole("region", {
+    name: "Cuộc trò chuyện",
+  });
+
+  expect(contacts).not.toHaveClass("hidden");
+  expect(conversation).toHaveClass("hidden");
+
+  fireEvent.click(await screen.findByRole("button", { name: "member" }));
+
+  expect(contacts).toHaveClass("hidden");
+  expect(conversation).toHaveClass("flex");
+  expect(
+    screen.getByRole("button", { name: "Quay lại danh sách liên hệ" }),
+  ).toBeInTheDocument();
+
+  fireEvent.click(
+    screen.getByRole("button", { name: "Quay lại danh sách liên hệ" }),
+  );
+
+  expect(contacts).not.toHaveClass("hidden");
+  expect(conversation).toHaveClass("hidden");
+});

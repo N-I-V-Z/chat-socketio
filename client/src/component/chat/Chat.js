@@ -22,7 +22,8 @@ import Button from "../ui/Button";
 import Dialog from "../ui/Dialog";
 import { useToast } from "../ui/ToastProvider";
 import { FaVideo } from "react-icons/fa6";
-import { IoCall } from "react-icons/io5";
+import { IoArrowBack, IoCall } from "react-icons/io5";
+import { cn } from "../ui/cn";
 
 const EMPTY_MESSAGES = [];
 
@@ -40,6 +41,8 @@ const Chat = () => {
     [],
   );
   const [receiverId, setReceiverId] = useState("");
+  const [isMobileConversationOpen, setIsMobileConversationOpen] =
+    useState(false);
   const [message, setMessage] = useState("");
   const [peerConnection, setPeerConnection] = useState(null);
   const [isCallModalVisible, setIsCallModalVisible] = useState(false);
@@ -238,6 +241,7 @@ const Chat = () => {
   const handleAcceptCall = useCallback(
     (from, video) => {
       setReceiverId(from);
+      setIsMobileConversationOpen(true);
       setIsCallModalVisible(true);
       socket.emit("callAccepted", {
         from: user.userId,
@@ -256,6 +260,7 @@ const Chat = () => {
     socket.on("videoCallRequest", (request) => setIncomingCall(request));
     socket.on("callAccepted", ({ from, video }) => {
       setReceiverId(from);
+      setIsMobileConversationOpen(true);
       setCalling(false);
       startCall(video);
       setIsCallModalVisible(true);
@@ -406,9 +411,15 @@ const Chat = () => {
   };
 
   return (
-    <main className="min-h-full bg-canvas text-ink lg:h-full lg:overflow-hidden">
-      <div className="mx-auto grid min-h-dvh max-w-[1600px] grid-rows-[minmax(12rem,30dvh)_minmax(65dvh,1fr)] gap-3 p-3 sm:gap-4 sm:p-5 lg:h-full lg:min-h-0 lg:grid-cols-[19rem_minmax(0,1fr)] lg:grid-rows-1">
-        <aside className="flex min-h-0 flex-col overflow-hidden rounded-panel border border-line bg-surface shadow-panel">
+    <main className="h-full min-h-0 bg-canvas text-ink">
+      <div className="mx-auto grid h-full min-h-0 max-w-[1600px] grid-cols-1 grid-rows-1 gap-0 lg:grid-cols-[19rem_minmax(0,1fr)] lg:gap-4 lg:p-5">
+        <aside
+          aria-label="Danh sách liên hệ"
+          className={cn(
+            "min-h-0 flex-col overflow-hidden border-line bg-surface lg:rounded-panel lg:border lg:shadow-panel",
+            isMobileConversationOpen ? "hidden lg:flex" : "flex",
+          )}
+        >
           <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-5">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">
@@ -460,7 +471,10 @@ const Chat = () => {
                   <button
                     type="button"
                     aria-current={isSelected ? "true" : undefined}
-                    onClick={() => setReceiverId(listedUser.userId)}
+                    onClick={() => {
+                      setReceiverId(listedUser.userId);
+                      setIsMobileConversationOpen(true);
+                    }}
                     className={[
                       "flex min-h-12 w-full items-center gap-3 rounded-xl px-3 py-2 text-left",
                       "transition duration-200 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
@@ -498,16 +512,31 @@ const Chat = () => {
 
         <section
           aria-label="Cuộc trò chuyện"
-          className="flex min-h-[65dvh] min-w-0 flex-col overflow-hidden rounded-panel border border-line bg-surface shadow-panel lg:min-h-0"
+          className={cn(
+            "min-h-0 min-w-0 flex-col overflow-hidden border-line bg-surface lg:rounded-panel lg:border lg:shadow-panel",
+            isMobileConversationOpen ? "flex" : "hidden lg:flex",
+          )}
         >
-          <header className="flex min-h-[4.5rem] flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-6">
-            <div className="min-w-0">
-              <p className="truncate text-base font-bold">{selectedUserName}</p>
-              <p className="mt-0.5 text-xs text-muted">
-                {selectedUser
-                  ? `Trò chuyện với ${selectedUser.userName}`
-                  : "Chọn một người dùng để bắt đầu"}
-              </p>
+          <header className="flex min-h-[4.5rem] flex-wrap items-center justify-between gap-3 border-b border-line px-3 py-3 sm:px-6">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <Button
+                variant="quiet"
+                aria-label="Quay lại danh sách liên hệ"
+                onClick={() => setIsMobileConversationOpen(false)}
+                className="size-10 min-h-10 shrink-0 rounded-lg px-2 lg:hidden"
+              >
+                <IoArrowBack aria-hidden="true" className="size-5" />
+              </Button>
+              <div className="min-w-0">
+                <p className="truncate text-base font-bold">
+                  {selectedUserName}
+                </p>
+                <p className="mt-0.5 truncate text-xs text-muted">
+                  {selectedUser
+                    ? `Trò chuyện với ${selectedUser.userName}`
+                    : "Chọn một người dùng để bắt đầu"}
+                </p>
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {hasValidReceiver && (
