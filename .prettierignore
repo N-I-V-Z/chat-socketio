@@ -1,0 +1,6 @@
+node_modules/
+**/node_modules/
+/client/build/
+/coverage/
+/dist/
+**/package-lock.json

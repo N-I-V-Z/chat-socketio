@@ -74,6 +74,18 @@ npm install
 npm start
 ```
 
+## Pre-commit Checks
+
+The Husky pre-commit hook formats staged source/configuration files with Prettier, then runs the server tests, client tests, and client production build. A formatting or validation failure stops the commit. To enable the hook for local development, install the root tooling and both app dependencies:
+
+```bash
+npm install
+npm --prefix server ci
+npm --prefix client ci
+```
+
+Run formatting on staged files with `npm run format:staged`, or run tests and the build with `npm run validate`.
+
 `npm start` in the server applies pending migrations automatically. To run migrations manually, use `npm run db:migrate`; to undo the latest migration, use `npm run db:migrate:undo`. The initial baseline migration intentionally does not drop tables when undone, so it cannot accidentally delete data in an existing database.
 
 ## Configuration
@@ -103,17 +115,18 @@ The audit log records registration, successful and failed login, logout, online/
 
 4. **Send a message**:
    - Type your message in the input field and press Enter or click the "Send" button to send the message.
-  
+
 5. **Call**:
    - Click "Call" button to send a request to call.
    - After request is accepted, call popup will be displayed.
-  
+
 6. **Call Video**:
    - Click "Video Call" button to send a request to call video.
    - After request is accepted, video call popup will be displayed.
 
-77. **Logout**:
-   - Click the "Logout" button to log out and return to the login page.
+7. **Logout**:
+
+- Click the "Logout" button to log out and return to the login page.
 
 ## Contributing
 
