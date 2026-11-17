@@ -1,8 +1,4 @@
-const {
-  createHash,
-  randomBytes,
-  randomUUID,
-} = require("node:crypto");
+const { createHash, randomBytes, randomUUID } = require("node:crypto");
 const jwt = require("jsonwebtoken");
 const db = require("../models");
 const httpError = require("../utils/httpError");
@@ -10,11 +6,10 @@ const { hashPassword, verifyAndUpgradePassword } = require("./passwordService");
 const auditLogService = require("./auditLogService");
 const cacheService = require("./cacheService");
 const { USER_DIRECTORY_KEY } = require("./cacheKeys");
+const { USER_ROLES } = require("../constants/userRole");
 
 const REFRESH_COOKIE = "refreshToken";
-const REFRESH_TOKEN_TTL_DAYS = Number(
-  process.env.REFRESH_TOKEN_TTL_DAYS || 7
-);
+const REFRESH_TOKEN_TTL_DAYS = Number(process.env.REFRESH_TOKEN_TTL_DAYS || 7);
 if (
   !Number.isSafeInteger(REFRESH_TOKEN_TTL_DAYS) ||
   REFRESH_TOKEN_TTL_DAYS < 1 ||
@@ -39,7 +34,7 @@ function serializeUser(user) {
   return {
     userId: user.userId,
     userName: user.userName,
-    role: user.role || "user",
+    role: user.role || USER_ROLES.USER,
   };
 }
 
@@ -122,7 +117,7 @@ async function register(userName, password) {
   const user = await db.sequelize.transaction(async (transaction) => {
     const user = await db.Users.create(
       { userName, password: passwordHash },
-      { transaction }
+      { transaction },
     );
     await auditLogService.recordEvent(
       {
@@ -131,7 +126,7 @@ async function register(userName, password) {
         actorUserName: user.userName,
         outcome: "success",
       },
-      { transaction }
+      { transaction },
     );
     return serializeUser(user);
   });
@@ -155,7 +150,7 @@ async function authenticate(userName, password) {
 async function revokeFamily(familyId) {
   await db.RefreshToken.update(
     { revokedAt: new Date() },
-    { where: { familyId, revokedAt: null } }
+    { where: { familyId, revokedAt: null } },
   );
 }
 
@@ -197,7 +192,7 @@ async function refreshSession(token, res) {
       {
         where: { tokenId: storedToken.tokenId, revokedAt: null },
         transaction,
-      }
+      },
     );
 
     if (updatedCount !== 1) {
@@ -213,7 +208,7 @@ async function refreshSession(token, res) {
         familyId: storedToken.familyId,
         expiresAt: new Date(Date.now() + REFRESH_TTL_MS),
       },
-      { transaction }
+      { transaction },
     );
     await transaction.commit();
   } catch (error) {
@@ -253,7 +248,7 @@ async function revokeRefreshSession(token) {
         tokenHash: hashRefreshToken(token),
         revokedAt: null,
       },
-    }
+    },
   );
   return storedToken.userId;
 }
