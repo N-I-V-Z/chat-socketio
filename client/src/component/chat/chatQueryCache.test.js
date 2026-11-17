@@ -14,32 +14,45 @@ function createQueryClient(initialKey, initialValue) {
   };
 }
 
-test("conversation query keys are shared by both participants", () => {
-  expect(queryKeys.conversation(9, 4)).toEqual(queryKeys.conversation(4, 9));
+test("direct conversation query keys are shared by both participants", () => {
+  expect(queryKeys.directConversation(9, 4)).toEqual(
+    queryKeys.directConversation(4, 9),
+  );
 });
 
 test("Socket.IO message updates the corresponding cached conversation once", () => {
-  const queryKey = queryKeys.conversation(4, 9);
-  const existing = [{ MessageId: 1, senderId: 4, message: "first" }];
-  const queryClient = createQueryClient(queryKey, existing);
+  const queryKey = queryKeys.conversation(44);
+  const existing = [
+    { MessageId: 1, SenderId: 4, MessageText: "first", ConversationId: 44 },
+  ];
+  const queryClient = createQueryClient(queryKey, {
+    pages: [{ items: existing, hasMore: false, nextCursor: null }],
+    pageParams: [null],
+  });
   const event = {
     senderId: 9,
     receiverId: 4,
+    conversationId: 44,
     messageId: 2,
     message: "reply",
   };
 
   expect(appendSocketMessage(queryClient, 4, event)).toBe(true);
-  expect(queryClient.getQueryData(queryKey)).toEqual([
+  expect(queryClient.getQueryData(queryKey).pages[0].items).toEqual([
     ...existing,
-    { MessageId: 2, senderId: 9, message: "reply" },
+    {
+      MessageId: 2,
+      ConversationId: 44,
+      SenderId: 9,
+      MessageText: "reply",
+    },
   ]);
   expect(appendSocketMessage(queryClient, 4, event)).toBe(true);
-  expect(queryClient.getQueryData(queryKey)).toHaveLength(2);
+  expect(queryClient.getQueryData(queryKey).pages[0].items).toHaveLength(2);
 });
 
 test("Socket.IO message for a room not yet cached does not create partial history", () => {
-  const queryKey = queryKeys.conversation(4, 9);
+  const queryKey = queryKeys.conversation(44);
   const queryClient = {
     getQueryData: () => undefined,
     setQueryData: () => {
@@ -51,9 +64,10 @@ test("Socket.IO message for a room not yet cached does not create partial histor
     appendSocketMessage(queryClient, 4, {
       senderId: 9,
       receiverId: 4,
+      conversationId: 44,
       messageId: 2,
       message: "reply",
-    })
+    }),
   ).toBe(false);
-  expect(queryKey).toEqual(["conversation", 4, 9]);
+  expect(queryKey).toEqual(["conversation", 44]);
 });

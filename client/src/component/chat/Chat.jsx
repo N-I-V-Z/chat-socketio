@@ -1,12 +1,18 @@
 import React, {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import io from "socket.io-client";
 import { useNavigate } from "react-router-dom";
 import config from "../config/config";
@@ -17,7 +23,10 @@ import api, {
 } from "../../api/client";
 import { logout } from "../store/actions/authAction";
 import { queryKeys } from "../../api/queryKeys";
-import { appendSocketMessage, appendUniqueMessage } from "./chatQueryCache";
+import {
+  appendConversationMessage,
+  appendSocketMessage,
+} from "./chatQueryCache";
 import Button from "../ui/Button";
 import Dialog from "../ui/Dialog";
 import { useToast } from "../ui/ToastProvider";
@@ -26,6 +35,8 @@ import { IoArrowBack, IoCall } from "react-icons/io5";
 import { cn } from "../ui/cn";
 
 const EMPTY_MESSAGES = [];
+const SCROLL_EDGE_PX = 72;
+const BOTTOM_THRESHOLD_PX = 96;
 
 const Chat = () => {
   const navigate = useNavigate();
@@ -59,7 +70,12 @@ const Chat = () => {
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const remoteAudioRef = useRef(null);
-  const messageListEndRef = useRef(null);
+  const messageListRef = useRef(null);
+  const isNearBottomRef = useRef(true);
+  const scrollAnchorRef = useRef(null);
+  const initialScrollConversationRef = useRef(null);
+  const initialScrollCompletedRef = useRef(false);
+  const olderFetchInFlightRef = useRef(false);
   const stopLocalMedia = useCallback(() => {
     const stream = localVideoRef.current?.srcObject;
     stream?.getTracks().forEach((track) => track.stop());
@@ -84,60 +100,182 @@ const Chat = () => {
     },
     enabled: hasValidUserId,
   });
-  const conversationQueryKey =
+  const directConversationQueryKey =
     hasValidReceiver && hasValidUserId
-      ? queryKeys.conversation(currentUserId, normalizedReceiverId)
-      : ["conversation", "disabled"];
-  const messagesQuery = useQuery({
-    queryKey: conversationQueryKey,
+      ? queryKeys.directConversation(currentUserId, normalizedReceiverId)
+      : ["direct-conversation", "disabled"];
+  const directConversationQuery = useQuery({
+    queryKey: directConversationQueryKey,
     queryFn: async () => {
-      const response = await api.post("/api/v1/message/getAllMessageOfRoom", {
-        receiverId: normalizedReceiverId,
+      const response = await api.post("/api/v1/conversations/direct", {
+        otherUserId: normalizedReceiverId,
       });
-      return response.data.data.map((item) => ({
-        MessageId: item.MessageId,
-        senderId: Number(item.SenderId),
-        message: item.MessageText,
-      }));
+      const conversationId = Number(response.data?.data?.conversationId);
+      if (!Number.isSafeInteger(conversationId) || conversationId < 1) {
+        throw new Error("The direct conversation response is invalid.");
+      }
+      return { conversationId };
     },
     enabled: hasValidReceiver && hasValidUserId,
   });
+  const rawConversationId = directConversationQuery.data?.conversationId;
+  const parsedConversationId =
+    rawConversationId === undefined ? null : Number(rawConversationId);
+  const conversationId =
+    Number.isSafeInteger(parsedConversationId) && parsedConversationId > 0
+      ? parsedConversationId
+      : null;
+  const hasValidConversationId = conversationId !== null;
+  const conversationQueryKey = hasValidConversationId
+    ? queryKeys.conversation(conversationId)
+    : ["conversation", "disabled"];
+  const messagesQuery = useInfiniteQuery({
+    queryKey: conversationQueryKey,
+    queryFn: async ({ pageParam }) => {
+      const response = await api.get(
+        `/api/v1/conversations/${conversationId}/messages`,
+        {
+          params:
+            pageParam === null ? undefined : { beforeMessageId: pageParam },
+        },
+      );
+      return response.data.data;
+    },
+    enabled: hasValidConversationId && hasValidUserId,
+    initialPageParam: null,
+    getPreviousPageParam: (firstPage) =>
+      firstPage.hasMore ? firstPage.nextCursor : undefined,
+    getNextPageParam: () => undefined,
+  });
+  const {
+    data: messagePages,
+    fetchPreviousPage,
+    hasPreviousPage,
+    isFetchingPreviousPage,
+  } = messagesQuery;
   const userList = userListQuery.data || [];
-  const messages = messagesQuery.data || EMPTY_MESSAGES;
+  const messages = useMemo(
+    () =>
+      messagesQuery.data?.pages.flatMap((page) =>
+        page.items.map((item) => ({
+          MessageId: item.MessageId,
+          senderId: Number(item.SenderId),
+          message: item.MessageText,
+        })),
+      ) || EMPTY_MESSAGES,
+    [messagesQuery.data],
+  );
   const selectedUser = userList.find(
     (listedUser) => Number(listedUser.userId) === normalizedReceiverId,
   );
   const selectedUserName = selectedUser?.userName || "Cuộc trò chuyện";
 
-  const sendMessageMutation = useMutation({
-    mutationFn: async ({ receiverId: targetId, message: text }) => {
-      const response = await api.post("/api/v1/message/addMessage", {
-        receiverId: targetId,
-        message: text,
+  const loadOlderMessages = useCallback(() => {
+    const container = messageListRef.current;
+    if (
+      !container ||
+      !hasPreviousPage ||
+      isFetchingPreviousPage ||
+      olderFetchInFlightRef.current
+    ) {
+      return;
+    }
+
+    olderFetchInFlightRef.current = true;
+    const pageCount = messagePages?.pages.length || 0;
+    scrollAnchorRef.current = {
+      scrollHeight: container.scrollHeight,
+      scrollTop: container.scrollTop,
+    };
+
+    fetchPreviousPage()
+      .then((result) => {
+        if (
+          result.isFetchPreviousPageError ||
+          (result.data?.pages.length || 0) <= pageCount
+        ) {
+          scrollAnchorRef.current = null;
+        }
+      })
+      .catch(() => {
+        scrollAnchorRef.current = null;
+      })
+      .finally(() => {
+        olderFetchInFlightRef.current = false;
       });
+  }, [
+    fetchPreviousPage,
+    hasPreviousPage,
+    isFetchingPreviousPage,
+    messagePages,
+  ]);
+
+  const handleMessageListScroll = useCallback(
+    (event) => {
+      const container = event.currentTarget;
+      isNearBottomRef.current =
+        container.scrollHeight - container.scrollTop - container.clientHeight <=
+        BOTTOM_THRESHOLD_PX;
+      if (container.scrollTop <= SCROLL_EDGE_PX) {
+        loadOlderMessages();
+      }
+    },
+    [loadOlderMessages],
+  );
+
+  useLayoutEffect(() => {
+    const container = messageListRef.current;
+    if (initialScrollConversationRef.current !== conversationId) {
+      initialScrollConversationRef.current = conversationId;
+      initialScrollCompletedRef.current = false;
+      isNearBottomRef.current = true;
+      scrollAnchorRef.current = null;
+    }
+    if (!container || !hasValidConversationId || !messagesQuery.data) {
+      return;
+    }
+
+    if (scrollAnchorRef.current) {
+      const anchor = scrollAnchorRef.current;
+      container.scrollTop =
+        anchor.scrollTop + container.scrollHeight - anchor.scrollHeight;
+      scrollAnchorRef.current = null;
+      isNearBottomRef.current = false;
+      return;
+    }
+
+    if (!initialScrollCompletedRef.current) {
+      container.scrollTop = container.scrollHeight;
+      initialScrollCompletedRef.current = true;
+      isNearBottomRef.current = true;
+      return;
+    }
+
+    if (isNearBottomRef.current) {
+      container.scrollTop = container.scrollHeight;
+    }
+  }, [conversationId, hasValidConversationId, messagesQuery.data]);
+
+  const sendMessageMutation = useMutation({
+    mutationFn: async ({ conversationId: targetId, message: text }) => {
+      const response = await api.post(
+        `/api/v1/conversations/${targetId}/messages`,
+        { message: text },
+      );
       return response.data.data;
     },
     onSuccess: (savedMessage, variables) => {
-      const queryKey = queryKeys.conversation(
-        currentUserId,
-        variables.receiverId,
+      appendConversationMessage(
+        queryClient,
+        variables.conversationId,
+        savedMessage,
       );
-      queryClient.setQueryData(queryKey, (cachedMessages) => {
-        if (!Array.isArray(cachedMessages)) {
-          return cachedMessages;
-        }
-        return appendUniqueMessage(cachedMessages, {
-          MessageId: savedMessage.MessageId,
-          senderId: currentUserId,
-          message: variables.message,
-        });
-      });
       socket.emit("sendMessage", {
         receiverId: variables.receiverId,
+        conversationId: variables.conversationId,
         message: variables.message,
         messageId: savedMessage.MessageId,
       });
-      queryClient.invalidateQueries({ queryKey });
     },
     onError: (_error, variables) => {
       setMessage((currentMessage) => currentMessage || variables.message);
@@ -340,19 +478,17 @@ const Chat = () => {
     toast,
   ]);
 
-  useEffect(() => {
-    messageListEndRef.current?.scrollIntoView({
-      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
-        ? "auto"
-        : "smooth",
-    });
-  }, [messages]);
-
   const sendMessage = () => {
     const text = message.trim();
-    if (text && hasValidReceiver && !sendMessageMutation.isPending) {
+    if (
+      text &&
+      hasValidReceiver &&
+      hasValidConversationId &&
+      !sendMessageMutation.isPending
+    ) {
       sendMessageMutation.mutate({
         receiverId: normalizedReceiverId,
+        conversationId,
         message: text,
       });
       setMessage("");
@@ -566,15 +702,24 @@ const Chat = () => {
 
           {hasValidReceiver ? (
             <>
-              {messagesQuery.isError && (
+              {(directConversationQuery.isError ||
+                (messagesQuery.isError && !messagesQuery.data)) && (
                 <div
                   className="flex items-center justify-between gap-3 border-b border-danger/30 bg-danger/5 px-4 py-3 text-sm text-danger sm:px-6"
                   role="alert"
                 >
-                  <span>Không thể tải tin nhắn.</span>
+                  <span>
+                    {directConversationQuery.isError
+                      ? "Không thể mở cuộc trò chuyện."
+                      : "Không thể tải tin nhắn."}
+                  </span>
                   <button
                     type="button"
-                    onClick={() => messagesQuery.refetch()}
+                    onClick={() =>
+                      directConversationQuery.isError
+                        ? directConversationQuery.refetch()
+                        : messagesQuery.refetch()
+                    }
                     className="shrink-0 font-semibold underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger"
                   >
                     Thử lại
@@ -582,34 +727,64 @@ const Chat = () => {
                 </div>
               )}
               <div
+                ref={messageListRef}
+                onScroll={handleMessageListScroll}
                 className="flex-1 space-y-3 overflow-y-auto px-4 py-5 sm:px-7 sm:py-7"
                 role="log"
                 aria-label={`Tin nhắn với ${selectedUserName}`}
                 aria-live="polite"
                 aria-relevant="additions"
               >
-                {messagesQuery.isPending && (
+                {messagesQuery.isFetchingPreviousPage && (
+                  <div
+                    className="py-2 text-center text-xs text-muted"
+                    role="status"
+                  >
+                    Đang tải tin nhắn cũ hơn...
+                  </div>
+                )}
+                {messagesQuery.isFetchPreviousPageError && (
+                  <div
+                    className="flex items-center justify-center gap-2 py-2 text-sm text-danger"
+                    role="alert"
+                  >
+                    <span>Không thể tải tin nhắn cũ hơn.</span>
+                    <button
+                      type="button"
+                      onClick={loadOlderMessages}
+                      className="font-semibold underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger"
+                    >
+                      Thử lại
+                    </button>
+                  </div>
+                )}
+                {(directConversationQuery.isPending ||
+                  (directConversationQuery.isSuccess &&
+                    messagesQuery.isPending)) && (
                   <div className="space-y-3" role="status">
                     <span className="block h-10 w-2/3 animate-pulse rounded-2xl bg-surface-muted motion-reduce:animate-none" />
                     <span className="ml-auto block h-10 w-1/2 animate-pulse rounded-2xl bg-accent/10 motion-reduce:animate-none" />
                     <span className="sr-only">Đang tải tin nhắn</span>
                   </div>
                 )}
-                {!messagesQuery.isPending && messages.length === 0 && (
-                  <div className="grid min-h-full place-items-center py-10 text-center">
-                    <div className="max-w-sm">
-                      <p className="text-base font-bold">Chưa có tin nhắn</p>
-                      <p className="mt-2 text-sm leading-6 text-muted">
-                        Gửi lời chào đầu tiên để bắt đầu cuộc trò chuyện.
-                      </p>
+                {!messagesQuery.isPending &&
+                  directConversationQuery.isSuccess &&
+                  messages.length === 0 && (
+                    <div className="grid min-h-full place-items-center py-10 text-center">
+                      <div className="max-w-sm">
+                        <p className="text-base font-bold">Chưa có tin nhắn</p>
+                        <p className="mt-2 text-sm leading-6 text-muted">
+                          Gửi lời chào đầu tiên để bắt đầu cuộc trò chuyện.
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
                 {messages.map((msg, index) => {
                   const isSent = Number(msg.senderId) === currentUserId;
                   return (
                     <div
                       key={msg.MessageId ?? `${msg.senderId}-${index}`}
+                      data-chat-message
                       className={`flex ${isSent ? "justify-end" : "justify-start"}`}
                     >
                       <p
@@ -625,7 +800,6 @@ const Chat = () => {
                     </div>
                   );
                 })}
-                <div ref={messageListEndRef} />
               </div>
               <form
                 className="border-t border-line p-3 sm:px-6 sm:py-4"
@@ -645,11 +819,15 @@ const Chat = () => {
                     onChange={(event) => setMessage(event.target.value)}
                     onKeyDown={handleMessageKeyDown}
                     placeholder="Nhập tin nhắn..."
-                    className="max-h-32 min-h-10 flex-1 resize-y bg-transparent px-3 py-2 text-sm leading-6 text-ink placeholder:text-muted focus:outline-none"
+                    className="max-h-32 min-h-10 flex-1 resize-y bg-transparent px-3 py-2 text-sm leading-6 text-ink placeholder:text-muted focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
                   />
                   <Button
                     type="submit"
-                    disabled={sendMessageMutation.isPending || !message.trim()}
+                    disabled={
+                      sendMessageMutation.isPending ||
+                      !message.trim() ||
+                      !hasValidConversationId
+                    }
                     className="min-h-10 shrink-0 rounded-xl px-4"
                   >
                     Gửi
