@@ -39,6 +39,9 @@ test("latest message page queries 31 rows and returns 30 in chronological order"
       queryOptions = options;
       return rows;
     }),
+    replace(db.MessageReadReceipt, "findAll", async () => [
+      { MessageId: 21, UserId: 3, readAt: new Date("2026-01-02T03:04:05Z") },
+    ]),
     replace(cacheService, "getOrLoad", async (key, ttl, loader) => {
       cacheRequest = { key, ttl };
       return loader();
@@ -60,6 +63,9 @@ test("latest message page queries 31 rows and returns 30 in chronological order"
     assert.equal(page.items[29].MessageId, 50);
     assert.equal(page.hasMore, true);
     assert.equal(page.nextCursor, 21);
+    assert.deepEqual(page.items[0].readReceipts, [
+      { UserId: 3, readAt: new Date("2026-01-02T03:04:05Z") },
+    ]);
   } finally {
     restores.reverse().forEach((restore) => restore());
   }
@@ -79,6 +85,7 @@ test("older message pages use an exclusive cursor and report no further pages", 
       queryOptions = options;
       return rows;
     }),
+    replace(db.MessageReadReceipt, "findAll", async () => []),
     replace(cacheService, "getOrLoad", async (key, _ttl, loader) => {
       cacheKey = key;
       return loader();
@@ -97,6 +104,37 @@ test("older message pages use an exclusive cursor and report no further pages", 
     );
     assert.equal(page.hasMore, false);
     assert.equal(page.nextCursor, null);
+    assert.deepEqual(page.items[0].readReceipts, []);
+  } finally {
+    restores.reverse().forEach((restore) => restore());
+  }
+});
+
+test("cached message pages load current read receipts outside the shared cache", async () => {
+  const cachedPage = {
+    items: createRows([10]),
+    hasMore: false,
+    nextCursor: null,
+  };
+  const restores = [
+    replace(db.ConversationParticipant, "findOne", async () => ({
+      conversationId: 8,
+    })),
+    replace(cacheService, "getOrLoad", async (_key, _ttl, loader) => {
+      assert.equal(typeof loader, "function");
+      return cachedPage;
+    }),
+    replace(db.MessageReadReceipt, "findAll", async (options) => {
+      assert.deepEqual(options.where, { MessageId: [10] });
+      return [{ MessageId: 10, UserId: 7, readAt: null }];
+    }),
+  ];
+
+  try {
+    const page = await messageService.getMessagePage(7, 8);
+
+    assert.deepEqual(page.items[0].readReceipts, [{ UserId: 7, readAt: null }]);
+    assert.equal(cachedPage.items[0].readReceipts, undefined);
   } finally {
     restores.reverse().forEach((restore) => restore());
   }

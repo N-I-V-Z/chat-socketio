@@ -58,7 +58,7 @@ async function getMessagePage(userId, conversationId, beforeMessageId = null) {
     throw httpError(404, "CONVERSATION_NOT_FOUND", "Conversation not found");
   }
 
-  return cacheService.getOrLoad(
+  const page = await cacheService.getOrLoad(
     conversationPageKey(conversationId, beforeMessageId),
     MESSAGE_HISTORY_TTL_SECONDS,
     async () => {
@@ -93,6 +93,32 @@ async function getMessagePage(userId, conversationId, beforeMessageId = null) {
       };
     },
   );
+
+  if (page.items.length === 0) return page;
+
+  const receipts = await db.MessageReadReceipt.findAll({
+    attributes: ["MessageId", "UserId", "readAt"],
+    where: { MessageId: page.items.map(({ MessageId }) => MessageId) },
+    raw: true,
+  });
+  const receiptsByMessageId = new Map();
+  for (const receipt of receipts) {
+    const key = String(receipt.MessageId);
+    const messageReceipts = receiptsByMessageId.get(key) || [];
+    messageReceipts.push({
+      UserId: receipt.UserId,
+      readAt: receipt.readAt,
+    });
+    receiptsByMessageId.set(key, messageReceipts);
+  }
+
+  return {
+    ...page,
+    items: page.items.map((item) => ({
+      ...item,
+      readReceipts: receiptsByMessageId.get(String(item.MessageId)) || [],
+    })),
+  };
 }
 
 async function addMessageToConversation(senderId, conversationId, message) {

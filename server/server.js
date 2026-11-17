@@ -36,6 +36,7 @@ const io = new Server(server, {
     methods: ["GET", "POST", "PUT", "DELETE"],
   },
 });
+app.set("io", io);
 
 app.use(express.static("public"));
 app.use(
