@@ -1,5 +1,7 @@
+const { randomUUID } = require("node:crypto");
 const { Op } = require("sequelize");
 const db = require("../models");
+const OUTBOX_EVENT_TYPES = require("../constants/outboxEventTypes");
 const auditLogService = require("./auditLogService");
 const cacheService = require("./cacheService");
 const conversationService = require("./conversationService");
@@ -13,6 +15,38 @@ function toPlainMessage(message) {
   return typeof message.get === "function"
     ? message.get({ plain: true })
     : message;
+}
+
+async function recordMessageCreated({
+  conversationId,
+  messageId,
+  senderId,
+  recipientUserIds,
+  transaction,
+}) {
+  const eventId = randomUUID();
+  const payload = {
+    eventId,
+    conversationId: Number(conversationId),
+    messageId: Number(messageId),
+    senderId: Number(senderId),
+    recipientUserIds: [...new Set(recipientUserIds.map(Number))].filter(
+      (userId) => userId !== Number(senderId),
+    ),
+  };
+
+  await db.MessageReadReceipt.create(
+    { MessageId: messageId, UserId: senderId },
+    { transaction },
+  );
+  await db.OutboxEvent.create(
+    {
+      eventId,
+      eventType: OUTBOX_EVENT_TYPES.CHAT_MESSAGE_CREATED,
+      payload: JSON.stringify(payload),
+    },
+    { transaction },
+  );
 }
 
 async function getMessagePage(userId, conversationId, beforeMessageId = null) {
@@ -93,6 +127,13 @@ async function addMessageToConversation(senderId, conversationId, message) {
       },
       { transaction },
     );
+    await recordMessageCreated({
+      conversationId,
+      messageId: savedMessage.MessageId,
+      senderId,
+      recipientUserIds: participantIds,
+      transaction,
+    });
     await auditLogService.recordEvent(
       {
         eventType: auditLogService.EVENT_TYPES.MESSAGE_SENT,
@@ -138,33 +179,45 @@ const messageService = {
   getMessagePage,
 
   addMessage: async (senderId, receiverId, message) => {
-    const savedMessage = await db.sequelize.transaction(async (transaction) => {
-      const conversation =
-        await conversationService.getOrCreateDirectConversation(
-          senderId,
-          receiverId,
+    const { conversationId, savedMessage } = await db.sequelize.transaction(
+      async (transaction) => {
+        const conversation =
+          await conversationService.getOrCreateDirectConversation(
+            senderId,
+            receiverId,
+            { transaction },
+          );
+        const savedMessage = await db.Message.create(
+          {
+            ConversationId: conversation.conversationId,
+            SenderId: senderId,
+            MessageText: message,
+          },
           { transaction },
         );
-      const savedMessage = await db.Message.create(
-        {
-          ConversationId: conversation.conversationId,
-          SenderId: senderId,
-          MessageText: message,
-        },
-        { transaction },
-      );
-      await auditLogService.recordEvent(
-        {
-          eventType: auditLogService.EVENT_TYPES.MESSAGE_SENT,
-          actorUserId: senderId,
-          targetUserId: receiverId,
-        },
-        { transaction },
-      );
-      return savedMessage;
-    });
+        await recordMessageCreated({
+          conversationId: conversation.conversationId,
+          messageId: savedMessage.MessageId,
+          senderId,
+          recipientUserIds: [receiverId],
+          transaction,
+        });
+        await auditLogService.recordEvent(
+          {
+            eventType: auditLogService.EVENT_TYPES.MESSAGE_SENT,
+            actorUserId: senderId,
+            targetUserId: receiverId,
+          },
+          { transaction },
+        );
+        return { conversationId: conversation.conversationId, savedMessage };
+      },
+    );
 
-    await cacheService.invalidate(conversationKey(senderId, receiverId));
+    await Promise.all([
+      cacheService.invalidate(conversationPageKey(conversationId)),
+      cacheService.invalidate(conversationKey(senderId, receiverId)),
+    ]);
     return savedMessage;
   },
 };

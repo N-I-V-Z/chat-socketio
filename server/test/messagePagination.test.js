@@ -144,6 +144,25 @@ test("direct conversation writes commit before invalidating latest and legacy pa
       });
       return { MessageId: 51, ...values };
     }),
+    replace(db.MessageReadReceipt, "create", async (values, options) => {
+      assert.deepEqual(values, { MessageId: 51, UserId: 7 });
+      assert.equal(options.transaction.id, "transaction");
+    }),
+    replace(db.OutboxEvent, "create", async (values, options) => {
+      assert.equal(options.transaction.id, "transaction");
+      assert.match(
+        values.eventId,
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      );
+      assert.equal(values.eventType, "chat.message.created");
+      assert.deepEqual(JSON.parse(values.payload), {
+        eventId: values.eventId,
+        conversationId: 8,
+        messageId: 51,
+        senderId: 7,
+        recipientUserIds: [3],
+      });
+    }),
     replace(auditLogService, "recordEvent", async (event, options) => {
       assert.equal(options.transaction.id, "transaction");
       assert.equal(event.targetUserId, 3);
@@ -176,6 +195,46 @@ test("direct conversation writes commit before invalidating latest and legacy pa
     ]);
   } finally {
     db.sequelize.transaction = originalTransaction;
+    restores.reverse().forEach((restore) => restore());
+  }
+});
+
+test("message creation fails atomically when its outbox event cannot be saved", async () => {
+  const restores = [
+    replace(db.sequelize, "transaction", async (callback) => {
+      try {
+        const result = await callback({ id: "transaction" });
+        transactionCommitted = true;
+        return result;
+      } catch (error) {
+        transactionRolledBack = true;
+        throw error;
+      }
+    }),
+    replace(db.ConversationParticipant, "findAll", async () => [
+      { userId: 3 },
+      { userId: 7 },
+    ]),
+    replace(db.Message, "create", async () => ({ MessageId: 52 })),
+    replace(db.MessageReadReceipt, "create", async () => undefined),
+    replace(db.OutboxEvent, "create", async () => {
+      throw new Error("outbox insert failed");
+    }),
+    replace(cacheService, "invalidate", async () => {
+      assert.fail("cache invalidation must wait for the transaction");
+    }),
+  ];
+  let transactionCommitted = false;
+  let transactionRolledBack = false;
+
+  try {
+    await assert.rejects(
+      messageService.addMessageToConversation(7, 8, "hello"),
+      /outbox insert failed/,
+    );
+    assert.equal(transactionCommitted, false);
+    assert.equal(transactionRolledBack, true);
+  } finally {
     restores.reverse().forEach((restore) => restore());
   }
 });

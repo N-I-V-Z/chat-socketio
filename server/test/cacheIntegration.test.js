@@ -94,12 +94,14 @@ test("message history uses a symmetric 30-second room cache key", async () => {
 test("message history cache invalidates only after the write transaction commits", async () => {
   const originalTransaction = db.sequelize.transaction;
   const originalMessageCreate = db.Message.create;
+  const originalReadReceiptCreate = db.MessageReadReceipt.create;
+  const originalOutboxEventCreate = db.OutboxEvent.create;
   const originalAuditCreate = db.AuditLog.create;
   const originalInvalidate = cacheService.invalidate;
   const originalGetOrCreateDirectConversation =
     conversationService.getOrCreateDirectConversation;
   let transactionCommitted = false;
-  let invalidatedKey;
+  const invalidatedKeys = [];
   db.sequelize.transaction = async (callback) => {
     const result = await callback({ id: "transaction" });
     transactionCommitted = true;
@@ -110,6 +112,16 @@ test("message history cache invalidates only after the write transaction commits
     assert.equal(values.ConversationId, 33);
     assert.equal(values.ReceiverId, undefined);
     return { MessageId: 11, ...values };
+  };
+  db.MessageReadReceipt.create = async (values, options) => {
+    assert.equal(options.transaction.id, "transaction");
+    assert.deepEqual(values, { MessageId: 11, UserId: 7 });
+    return values;
+  };
+  db.OutboxEvent.create = async (values, options) => {
+    assert.equal(options.transaction.id, "transaction");
+    assert.deepEqual(JSON.parse(values.payload).recipientUserIds, [3]);
+    return values;
   };
   db.AuditLog.create = async (values, options) => {
     assert.equal(options.transaction.id, "transaction");
@@ -127,17 +139,22 @@ test("message history cache invalidates only after the write transaction commits
   };
   cacheService.invalidate = async (key) => {
     assert.equal(transactionCommitted, true);
-    invalidatedKey = key;
+    invalidatedKeys.push(key);
     return true;
   };
 
   try {
     const saved = await messageService.addMessage(7, 3, "hello");
     assert.equal(saved.MessageText, "hello");
-    assert.equal(invalidatedKey, "messages:room:v1:3:7");
+    assert.deepEqual(invalidatedKeys.sort(), [
+      "messages:conversation:v1:33:latest",
+      "messages:room:v1:3:7",
+    ]);
   } finally {
     db.sequelize.transaction = originalTransaction;
     db.Message.create = originalMessageCreate;
+    db.MessageReadReceipt.create = originalReadReceiptCreate;
+    db.OutboxEvent.create = originalOutboxEventCreate;
     db.AuditLog.create = originalAuditCreate;
     cacheService.invalidate = originalInvalidate;
     conversationService.getOrCreateDirectConversation =
