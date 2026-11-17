@@ -276,7 +276,7 @@ const Chat = () => {
           );
           setMessages(
             response.data.data.map((m) => ({
-              senderId: String(m.SenderId),
+              senderId: Number(m.SenderId),
               message: m.MessageText,
             }))
           );
@@ -430,7 +430,9 @@ const Chat = () => {
                 <div
                   key={index}
                   className={`message ${
-                    msg.senderId === user.userId ? "sent" : "received"
+                    Number(msg.senderId) === Number(user.userId)
+                      ? "sent"
+                      : "received"
                   }`}
                 >
                   {msg.message}
