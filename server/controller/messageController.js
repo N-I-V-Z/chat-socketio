@@ -1,41 +1,42 @@
 const messageService = require("../services/messageService");
+const asyncHandler = require("../middleware/asyncHandler");
+const { success } = require("../utils/apiResponse");
+const httpError = require("../utils/httpError");
 
-const getAllMessageOfRoom = async (req, res) => {
-  try {
-    const { senderId, receiverId } = req.body;
-    const response = await messageService.getAllMessageOfRoom(
-      senderId,
-      receiverId
-    );
-
-    res
-      .status(response ? 200 : 404)
-      .send({ err: response ? 0 : 1, data: response ?? null });
-  } catch (error) {
-    console.log("Internal server error:", error);
-    res.status(500).send("Internal server error"); // Status 500 for internal server error
+function parseReceiverId(value) {
+  const receiverId = Number(value);
+  if (!Number.isSafeInteger(receiverId) || receiverId < 1) {
+    throw httpError(400, "INVALID_RECEIVER", "A valid receiver is required");
   }
-};
+  return receiverId;
+}
 
-const addMessage = async (req, res) => {
-  try {
-    const { senderId, receiverId, message } = req.body;
-    const response = await messageService.addMessage(
-      senderId,
-      receiverId,
-      message
-    );
+const getAllMessageOfRoom = asyncHandler(async (req, res) => {
+  const receiverId = parseReceiverId(req.body?.receiverId);
+  const messages = await messageService.getAllMessageOfRoom(
+    req.auth.userId,
+    receiverId
+  );
+  success(res, messages);
+});
 
-    res
-      .status(response ? 200 : 404)
-      .send({ err: response ? 0 : 1 });
-  } catch (error) {
-    console.log("Internal server error:", error);
-    res.status(500).send("Internal server error"); // Status 500 for internal server error
+const addMessage = asyncHandler(async (req, res) => {
+  const receiverId = parseReceiverId(req.body?.receiverId);
+  const message = req.body?.message;
+
+  if (typeof message !== "string" || !message.trim() || message.length > 4000) {
+    throw httpError(400, "INVALID_MESSAGE", "Message must contain 1-4000 characters");
   }
-};
+
+  const savedMessage = await messageService.addMessage(
+    req.auth.userId,
+    receiverId,
+    message.trim()
+  );
+  success(res, savedMessage, 201, "Message saved");
+});
 
 module.exports = {
-  getAllMessageOfRoom,
   addMessage,
+  getAllMessageOfRoom,
 };

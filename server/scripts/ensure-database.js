@@ -1,4 +1,13 @@
-require("dotenv").config();
+require("dotenv").config({
+  path: require("node:path").resolve(__dirname, "../../.env"),
+});
+
+if (
+  !process.env.JWT_ACCESS_SECRET ||
+  Buffer.byteLength(process.env.JWT_ACCESS_SECRET) < 32
+) {
+  throw new Error("JWT_ACCESS_SECRET must be at least 32 bytes.");
+}
 
 const { Sequelize } = require("sequelize");
 
