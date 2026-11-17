@@ -28,7 +28,7 @@ A real-time chat application built with React.js, Node.js, and Socket.IO, featur
 
 2. Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) and start it.
 
-3. Create a root `.env` file from the example, choose a strong SQL Server password, and replace `JWT_ACCESS_SECRET` with a random value of at least 32 bytes (for example, `openssl rand -hex 32`):
+3. Create a root `.env` file from the example, choose a strong SQL Server password, replace `JWT_ACCESS_SECRET` with a random value of at least 32 bytes (for example, `openssl rand -hex 32`), and set `REACT_APP_API_ROOT` and `CLIENT_URL` for the environment:
 
    ```bash
    cp .env.example .env
@@ -41,6 +41,19 @@ A real-time chat application built with React.js, Node.js, and Socket.IO, featur
    ```
 
    Open `http://localhost:3000`. The API is available at `http://localhost:5000`.
+
+The client container reads `REACT_APP_API_ROOT` at startup and writes a small runtime configuration file. Set this variable in the root `.env` to the API's browser-accessible URL; changing it does not require rebuilding the client image. Set it to an empty value only when a same-origin reverse proxy routes API and Socket.IO requests. `CLIENT_URL` must be the exact public origin from which the browser loads the client.
+
+For a Compose deployment using a prebuilt client image, pass the same variable to that service:
+
+```yaml
+client:
+  image: your-account/chat-socketio-client:latest
+  environment:
+    REACT_APP_API_ROOT: ${REACT_APP_API_ROOT-http://localhost:5000}
+```
+
+Build and push the client image once after adding runtime configuration support. Thereafter, changing `REACT_APP_API_ROOT` in the deployment `.env` and recreating the client container is sufficient; no per-environment client rebuild is needed.
 
 The server creates the `ChatDb` database when needed and runs Sequelize migrations before starting. The initial migration creates the current `Users` and `Message` schema, and skips tables that already exist. SQL Server data is persisted in the `sqlserver_data` Docker volume; Kafka data is persisted in `kafka_data`. The single-node KRaft broker is intended for local development, not as a highly available production cluster.
 
