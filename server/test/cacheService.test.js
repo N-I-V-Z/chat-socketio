@@ -107,6 +107,28 @@ test("cache read failure logs only an error code and falls back to the database"
   assert.equal(warnings[0].includes("private:key"), false);
 });
 
+test("cache write failure still returns the database result", async () => {
+  const warnings = [];
+  const client = createFakeClient({
+    async set() {
+      throw Object.assign(new Error("Redis write failed"), {
+        code: "ECONNRESET",
+      });
+    },
+  });
+  const cache = createCacheService({
+    connection: { getClient: () => client },
+    logger: { warn: (warning) => warnings.push(warning) },
+  });
+
+  const result = await cache.getOrLoad("users:list:v1", 60, async () => [
+    "database",
+  ]);
+
+  assert.deepEqual(result, ["database"]);
+  assert.match(warnings[0], /ECONNRESET/);
+});
+
 test("invalid cached JSON is evicted before loading from the database", async () => {
   const client = createFakeClient();
   client.values.set("users:list:v1", "{invalid");
