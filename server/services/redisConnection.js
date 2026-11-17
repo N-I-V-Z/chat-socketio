@@ -30,18 +30,23 @@ function createRedisConnection({
     }
 
     if (!client) {
-      client = clientFactory({
-        url,
-        socket: {
-          connectTimeout: CONNECT_TIMEOUT_MS,
-          reconnectStrategy: (retries) =>
-            Math.min(retries * 200, MAX_RECONNECT_DELAY_MS),
-        },
-      });
-      client.on("error", logUnavailable);
-      client.on("ready", () => {
-        unavailableWarningLogged = false;
-      });
+      try {
+        client = clientFactory({
+          url,
+          socket: {
+            connectTimeout: CONNECT_TIMEOUT_MS,
+            reconnectStrategy: (retries) =>
+              Math.min(retries * 200, MAX_RECONNECT_DELAY_MS),
+          },
+        });
+        client.on("error", logUnavailable);
+        client.on("ready", () => {
+          unavailableWarningLogged = false;
+        });
+      } catch (error) {
+        logUnavailable(error);
+        return null;
+      }
     }
 
     return client;

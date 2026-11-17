@@ -8,6 +8,8 @@ const db = require("../models");
 const httpError = require("../utils/httpError");
 const { hashPassword, verifyAndUpgradePassword } = require("./passwordService");
 const auditLogService = require("./auditLogService");
+const cacheService = require("./cacheService");
+const { USER_DIRECTORY_KEY } = require("./cacheKeys");
 
 const REFRESH_COOKIE = "refreshToken";
 const REFRESH_TOKEN_TTL_DAYS = Number(
@@ -117,7 +119,7 @@ async function createRefreshSession(userId, res, familyId = randomUUID()) {
 
 async function register(userName, password) {
   const passwordHash = await hashPassword(password);
-  return db.sequelize.transaction(async (transaction) => {
+  const user = await db.sequelize.transaction(async (transaction) => {
     const user = await db.Users.create(
       { userName, password: passwordHash },
       { transaction }
@@ -133,6 +135,8 @@ async function register(userName, password) {
     );
     return serializeUser(user);
   });
+  await cacheService.invalidate(USER_DIRECTORY_KEY);
+  return user;
 }
 
 async function authenticate(userName, password) {
