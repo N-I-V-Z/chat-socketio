@@ -4,34 +4,17 @@
 
 :root {
   color-scheme: light;
-  --color-canvas: 244 248 246;
+  --color-canvas: 247 248 250;
   --color-surface: 255 255 255;
-  --color-surface-muted: 235 242 239;
-  --color-ink: 27 42 39;
-  --color-muted: 98 116 111;
-  --color-line: 218 229 224;
-  --color-accent: 23 107 91;
-  --color-accent-hover: 17 89 76;
-  --color-accent-foreground: 248 255 252;
+  --color-surface-muted: 241 243 246;
+  --color-ink: 37 43 51;
+  --color-muted: 105 116 129;
+  --color-line: 225 229 234;
+  --color-accent: 79 111 146;
+  --color-accent-hover: 64 95 128;
+  --color-accent-foreground: 255 255 255;
   --color-danger: 177 61 58;
   --color-success: 37 121 84;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --color-canvas: 13 24 22;
-    --color-surface: 20 34 31;
-    --color-surface-muted: 29 47 43;
-    --color-ink: 231 242 238;
-    --color-muted: 159 181 174;
-    --color-line: 45 67 61;
-    --color-accent: 87 183 161;
-    --color-accent-hover: 109 201 179;
-    --color-accent-foreground: 10 34 28;
-    --color-danger: 244 132 124;
-    --color-success: 110 201 151;
-  }
 }
 
 @layer base {
