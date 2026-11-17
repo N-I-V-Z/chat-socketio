@@ -34,7 +34,23 @@ A real-time chat application built with React.js, Node.js, and Socket.IO, featur
    cp .env.example .env
    ```
 
-4. Build and start the client, server, SQL Server, Redis, and Kafka:
+4. Local Docker Compose builds the client with `http://localhost:5000` by default. To override this, set `LOCAL_API_ROOT` in the root `.env` file. This is a build-time setting; the browser needs a URL it can reach.
+
+   For a production client image, create `client/.env.production` with the API URL reachable by the user's browser:
+
+   ```dotenv
+   REACT_APP_API_ROOT=https://api.example.com
+   ```
+
+   The production API URL is embedded into the static client bundle when you build the image directly without a `REACT_APP_API_ROOT` build argument:
+
+   ```bash
+   docker build -t nivz0911/chat-socketio-client:latest ./client
+   ```
+
+   The file is ignored by Git so each deployment can build with its own API URL. A VPS Compose service that uses this prebuilt image does not need a client API environment variable. Set the root `.env` variable `CLIENT_URL` to the frontend's public origin for server CORS.
+
+5. Build and start the client, server, SQL Server, Redis, and Kafka:
 
    ```bash
    docker compose up --build
