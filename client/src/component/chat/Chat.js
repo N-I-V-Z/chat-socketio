@@ -1,53 +1,78 @@
 import React, {
-  useState,
-  useEffect,
-  useRef,
   useCallback,
+  useEffect,
   useMemo,
+  useRef,
+  useState,
 } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import io from "socket.io-client";
+import { Link, useNavigate } from "react-router-dom";
 import config from "../config/config";
 import api, {
   clearAccessToken,
   getAccessToken,
   refreshAccessToken,
 } from "../../api/client";
-import "./Chat.css";
+import { logout } from "../store/actions/authAction";
+import { queryKeys } from "../../api/queryKeys";
+import { appendSocketMessage, appendUniqueMessage } from "./chatQueryCache";
+import Button from "../ui/Button";
+import Dialog from "../ui/Dialog";
+import { useToast } from "../ui/ToastProvider";
 import { CiLogout } from "react-icons/ci";
 import { FaVideo } from "react-icons/fa6";
 import { IoCall } from "react-icons/io5";
-import { Link, useNavigate } from "react-router-dom";
-import { logout } from "../store/actions/authAction";
-import { Modal, notification, Button, message } from "antd";
-import { queryKeys } from "../../api/queryKeys";
-import {
-  appendSocketMessage,
-  appendUniqueMessage,
-} from "./chatQueryCache";
-const antdMessage = message; // trùng tên biến nên khai báo 1 biến khác để dùng
+
 const EMPTY_MESSAGES = [];
 
 const Chat = () => {
-  // chuyển trang và lưu redux
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const queryClient = useQueryClient();
+  const toast = useToast();
   const socket = useMemo(
     () =>
       io(config.API_ROOT, {
         autoConnect: false,
         auth: (callback) => callback({ token: getAccessToken() }),
       }),
-    []
+    [],
   );
-  // thông tin người dùng, room
   const [receiverId, setReceiverId] = useState("");
+  const [message, setMessage] = useState("");
+  const [peerConnection, setPeerConnection] = useState(null);
+  const [isCallModalVisible, setIsCallModalVisible] = useState(false);
+  const [calling, setCalling] = useState(false);
+  const [callHasVideo, setCallHasVideo] = useState(false);
+  const [incomingCall, setIncomingCall] = useState(null);
+  const [isLogoutDialogOpen, setIsLogoutDialogOpen] = useState(false);
   const { user } = useSelector((state) => state.auth);
   const currentUserId = Number(user?.userId);
   const hasValidUserId =
     Number.isSafeInteger(currentUserId) && currentUserId > 0;
+  const normalizedReceiverId = receiverId ? Number(receiverId) : null;
+  const hasValidReceiver =
+    Number.isSafeInteger(normalizedReceiverId) && normalizedReceiverId > 0;
+  const localVideoRef = useRef(null);
+  const remoteVideoRef = useRef(null);
+  const remoteAudioRef = useRef(null);
+  const messageListEndRef = useRef(null);
+  const stopLocalMedia = useCallback(() => {
+    const stream = localVideoRef.current?.srcObject;
+    stream?.getTracks().forEach((track) => track.stop());
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = null;
+    }
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = null;
+    }
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.srcObject = null;
+    }
+  }, []);
+
   const userListQuery = useQuery({
     queryKey: hasValidUserId
       ? queryKeys.chatUsers(currentUserId)
@@ -58,9 +83,6 @@ const Chat = () => {
     },
     enabled: hasValidUserId,
   });
-  const normalizedReceiverId = receiverId ? Number(receiverId) : null;
-  const hasValidReceiver =
-    Number.isSafeInteger(normalizedReceiverId) && normalizedReceiverId > 0;
   const conversationQueryKey =
     hasValidReceiver && hasValidUserId
       ? queryKeys.conversation(currentUserId, normalizedReceiverId)
@@ -68,10 +90,9 @@ const Chat = () => {
   const messagesQuery = useQuery({
     queryKey: conversationQueryKey,
     queryFn: async () => {
-      const response = await api.post(
-        "/api/v1/message/getAllMessageOfRoom",
-        { receiverId: normalizedReceiverId }
-      );
+      const response = await api.post("/api/v1/message/getAllMessageOfRoom", {
+        receiverId: normalizedReceiverId,
+      });
       return response.data.data.map((item) => ({
         MessageId: item.MessageId,
         senderId: Number(item.SenderId),
@@ -82,15 +103,11 @@ const Chat = () => {
   });
   const userList = userListQuery.data || [];
   const messages = messagesQuery.data || EMPTY_MESSAGES;
-  // liên quan đến tin nhắn
-  const [message, setMessage] = useState("");
-  const messageListEndRef = useRef(null);
-  // liên quan đến kết nối video call
-  const [peerConnection, setPeerConnection] = useState(null);
-  const localVideoRef = useRef(null);
-  const remoteVideoRef = useRef(null);
-  const [isCallModalVisible, setIsCallModalVisible] = useState(false);
-  const [calling, setCalling] = useState(false);
+  const selectedUser = userList.find(
+    (listedUser) => Number(listedUser.userId) === normalizedReceiverId,
+  );
+  const selectedUserName = selectedUser?.userName || "Cuộc trò chuyện";
+
   const sendMessageMutation = useMutation({
     mutationFn: async ({ receiverId: targetId, message: text }) => {
       const response = await api.post("/api/v1/message/addMessage", {
@@ -102,7 +119,7 @@ const Chat = () => {
     onSuccess: (savedMessage, variables) => {
       const queryKey = queryKeys.conversation(
         currentUserId,
-        variables.receiverId
+        variables.receiverId,
       );
       queryClient.setQueryData(queryKey, (cachedMessages) => {
         if (!Array.isArray(cachedMessages)) {
@@ -123,9 +140,7 @@ const Chat = () => {
     },
     onError: (_error, variables) => {
       setMessage((currentMessage) => currentMessage || variables.message);
-      notification.error({
-        message: "Máy chủ đang lỗi...",
-      });
+      toast("Tin nhắn chưa được gửi. Vui lòng thử lại.", "error");
     },
   });
 
@@ -141,9 +156,7 @@ const Chat = () => {
           navigate("/", { replace: true });
           return;
         }
-        notification.error({
-          message: "Không thể gia hạn phiên đăng nhập. Vui lòng thử lại.",
-        });
+        toast("Không thể gia hạn phiên đăng nhập. Vui lòng thử lại.", "error");
       }
     };
     const handleConnectError = (error) => {
@@ -166,17 +179,16 @@ const Chat = () => {
       socket.off("disconnect", handleDisconnect);
       socket.disconnect();
     };
-  }, [dispatch, navigate, socket]);
+  }, [dispatch, navigate, socket, toast]);
 
-  // hàm xử lý khi cuộc gọi thật sự bắt đầu
   const startCall = useCallback(
     async (video) => {
-      // tạo 1 peer
-      const pc = new RTCPeerConnection({
+      setCallHasVideo(Boolean(video));
+      const connection = new RTCPeerConnection({
         iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
       });
 
-      pc.onicecandidate = (event) => {
+      connection.onicecandidate = (event) => {
         if (event.candidate) {
           socket.emit("ice-candidate", {
             iceCandidate: event.candidate,
@@ -185,88 +197,75 @@ const Chat = () => {
         }
       };
 
-      pc.ontrack = (event) => {
-        remoteVideoRef.current.srcObject = event.streams[0];
+      connection.ontrack = (event) => {
+        const mediaElement = video
+          ? remoteVideoRef.current
+          : remoteAudioRef.current;
+        if (mediaElement) {
+          mediaElement.srcObject = event.streams[0];
+        }
       };
-      // lấy thông tin từ video, audio
+
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: video ?? false,
           audio: true,
         });
 
-        localVideoRef.current.srcObject = stream;
-
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = stream;
+        }
         stream.getTracks().forEach((track) => {
-          if (pc.signalingState !== "closed") {
-            pc.addTrack(track, stream);
+          if (connection.signalingState !== "closed") {
+            connection.addTrack(track, stream);
           }
         });
 
-        // set vào peer connection
-        setPeerConnection(pc);
-        // tạo 1 offer để set vào local description trong peer của mình (mình cần phải set thêm 1 remote description vào trong peer, đó là offer của người mình muốn kết nối để gọi)
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        // sau khi set vào local xong thì gửi offer đó qua cho người cần kết nối để họ set vào remote description trong peer của họ (dùng real time để gửi)
+        setPeerConnection(connection);
+        const offer = await connection.createOffer();
+        await connection.setLocalDescription(offer);
         socket.emit("offer", { offer, to: receiverId });
-      } catch (error) {
-        antdMessage.error("Error accessing media devices or starting call"); // báo lỗi khi không có quyền truy cập camera hoặc audio
+      } catch {
+        connection.close();
+        stopLocalMedia();
+        setPeerConnection(null);
+        setCalling(false);
+        setIsCallModalVisible(false);
+        toast("Không thể truy cập micro hoặc camera.", "error");
       }
     },
-    [receiverId, socket]
+    [receiverId, socket, stopLocalMedia, toast],
   );
 
-  // useEffect này dùng để đón các thông tin từ socket gửi về
-  useEffect(() => {
-    // hàm xử lý sau khi chấp nhận yêu cầu cuộc gọi
-    const handleAcceptCall = (from, video) => {
+  const handleAcceptCall = useCallback(
+    (from, video) => {
       setReceiverId(from);
       setIsCallModalVisible(true);
-      // gửi yêu cầu đã được chấp nhận về cho người kia
       socket.emit("callAccepted", {
         from: user.userId,
         to: from,
-        video: video,
+        video,
       });
       startCall(video);
-    };
-    // người dùng tự động đăng kí vào một mảng tạm được lưu ở server
-    // nhận tin nhắn
+    },
+    [socket, startCall, user.userId],
+  );
+
+  useEffect(() => {
     socket.on("receiveMessage", (event) =>
-      appendSocketMessage(queryClient, currentUserId, event)
+      appendSocketMessage(queryClient, currentUserId, event),
     );
-    // nhận yêu cầu call video
-    socket.on("videoCallRequest", ({ from, name, video }) => {
-      Modal.confirm({
-        title: `Bạn có muốn nhận cuộc gọi ${video ? "video" : ""} từ ${name}?`,
-        okText: "Nghe",
-        cancelText: "Từ chối",
-        onOk() {
-          // nếu đồng ý thì gọi hàm handleAcceptCall() để bắt đầu cuộc gọi
-          handleAcceptCall(from, video);
-        },
-        // không đồng ý thì gửi thông tin không đồng ý cho người kia
-        onCancel() {
-          socket.emit("callRejected", { to: from });
-        },
-      });
-    });
-    // nhận thông tin yêu cầu call đã được đồng ý
+    socket.on("videoCallRequest", (request) => setIncomingCall(request));
     socket.on("callAccepted", ({ from, video }) => {
       setReceiverId(from);
       setCalling(false);
       startCall(video);
       setIsCallModalVisible(true);
     });
-    // nhận thông tin yêu cầu call bị từ chối
     socket.on("callRejected", () => {
-      notification.info({
-        message: "Cuộc gọi video bị từ chối.",
-      });
+      toast("Cuộc gọi đã bị từ chối.", "info");
       setCalling(false);
     });
-    // nhận thông tin khi cuộc gọi bị kết thúc
     socket.on("callEnded", () => {
       setIsCallModalVisible(false);
       setCalling(false);
@@ -274,49 +273,46 @@ const Chat = () => {
         peerConnection.close();
         setPeerConnection(null);
       }
-      notification.info({
-        message: "Cuộc gọi đã kết thúc.",
-      });
+      stopLocalMedia();
+      setCallHasVideo(false);
+      toast("Cuộc gọi đã kết thúc.", "info");
     });
-    // nhận offer của người kia để lưu vào remote description trong peer connection của mình
     socket.on("offer", async ({ offer }) => {
       if (!peerConnection) return;
 
       try {
-        // set offer nhận được vào remote description của mình
         await peerConnection.setRemoteDescription(
-          new RTCSessionDescription(offer)
+          new RTCSessionDescription(offer),
         );
-        // sau đó tạo một offer của mình và set vào local description trong peer connection
         const answer = await peerConnection.createAnswer();
         await peerConnection.setLocalDescription(answer);
-        // sau đó gửi offer của mình lại cho người kia để họ set vào remote description của họ
         socket.emit("answer", { answer, to: receiverId });
       } catch (error) {
-        console.log(error);
+        console.error("Could not accept the call offer", error);
+        toast("Không thể thiết lập cuộc gọi.", "error");
       }
     });
-    // nhận offer sau khi mình gửi offer cho họ
     socket.on("answer", async ({ answer }) => {
       if (!peerConnection) return;
 
       try {
         await peerConnection.setRemoteDescription(
-          new RTCSessionDescription(answer)
+          new RTCSessionDescription(answer),
         );
       } catch (error) {
-        console.log(error);
+        console.error("Could not apply the call answer", error);
+        toast("Không thể thiết lập cuộc gọi.", "error");
       }
     });
-
     socket.on("ice-candidate", async (candidate) => {
-      if (!peerConnection) return;
-      if (!candidate.iceCandidate) return;
+      if (!peerConnection || !candidate.iceCandidate) return;
       try {
-        const iceCandidate = candidate.iceCandidate;
-        await peerConnection.addIceCandidate(new RTCIceCandidate(iceCandidate));
+        await peerConnection.addIceCandidate(
+          new RTCIceCandidate(candidate.iceCandidate),
+        );
       } catch (error) {
-        console.error("Error adding ICE candidate:", error);
+        console.error("Could not add the ICE candidate", error);
+        toast("Kết nối cuộc gọi gặp sự cố.", "error");
       }
     });
 
@@ -330,15 +326,26 @@ const Chat = () => {
       socket.off("answer");
       socket.off("ice-candidate");
     };
-  }, [user, currentUserId, queryClient, peerConnection, receiverId, startCall, socket]);
+  }, [
+    currentUserId,
+    peerConnection,
+    queryClient,
+    receiverId,
+    socket,
+    stopLocalMedia,
+    startCall,
+    toast,
+  ]);
 
-  // cuộn xuống cuối khi có tin nhắn mới
   useEffect(() => {
-    messageListEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    messageListEndRef.current?.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+    });
   }, [messages]);
 
-  // xử lý gửi tin nhắn
-  const sendMessage = async () => {
+  const sendMessage = () => {
     const text = message.trim();
     if (text && hasValidReceiver && !sendMessageMutation.isPending) {
       sendMessageMutation.mutate({
@@ -349,209 +356,473 @@ const Chat = () => {
     }
   };
 
-  // nhấn enter để gửi tin
-  const handleKeyDown = (event) => {
-    if (event.key === "Enter") {
+  const handleMessageKeyDown = (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
       sendMessage();
     }
   };
-  // popup hỏi đăng xuất
-  const showConfirm = () => {
-    Modal.confirm({
-      title: "Bạn có chắc chắn muốn đăng xuất?",
-      okText: "Có",
-      cancelText: "Hủy",
-      onOk() {
-        handleLogout();
-      },
-    });
-  };
-  // đăng xuất
+
   const handleLogout = async () => {
     try {
       await api.post("/api/v1/user/logout");
     } catch (error) {
       console.error("Could not revoke the refresh token", error);
-      notification.error({
-        message: "Đăng xuất không thành công. Vui lòng thử lại.",
-      });
-      return;
+      toast("Đăng xuất không thành công. Vui lòng thử lại.", "error");
+      return false;
     }
 
     clearAccessToken();
     queryClient.clear();
     dispatch(logout());
     navigate("/", { replace: true });
+    return true;
   };
-  // gửi yêu cầu call video
-  const requestVideoCall = ({ video }) => {
+
+  const requestCall = (video) => {
     socket.emit("videoCallRequest", {
       to: receiverId,
-      video: video,
+      video,
     });
     setCalling(true);
   };
-  // hủy call
+
   const handleCallCancel = () => {
     setIsCallModalVisible(false);
     if (peerConnection) {
       peerConnection.close();
       setPeerConnection(null);
     }
+    stopLocalMedia();
+    setCallHasVideo(false);
     socket.emit("callEnded", { to: receiverId });
   };
-  // hủy khi đang chờ chấp nhận call
+
   const handleCallingCancel = () => {
     socket.emit("callEnded", { to: receiverId });
     if (peerConnection) {
       peerConnection.close();
       setPeerConnection(null);
     }
+    stopLocalMedia();
     setCalling(false);
     setIsCallModalVisible(false);
+    setCallHasVideo(false);
+  };
+
+  const acceptIncomingCall = () => {
+    if (!incomingCall) return;
+    handleAcceptCall(incomingCall.from, incomingCall.video);
+    setIncomingCall(null);
+  };
+
+  const rejectIncomingCall = () => {
+    if (incomingCall) {
+      socket.emit("callRejected", { to: incomingCall.from });
+      setIncomingCall(null);
+    }
   };
 
   return (
-    <div className="container">
-      <div className="sidebar">
-        <h2>Danh sách</h2>
-        {/* lấy list user */}
-        <ul className="user-list">
-          {userListQuery.isPending && (
-            <li className="user-item">Đang tải danh sách...</li>
-          )}
-          {userListQuery.isError && (
-            <li className="user-item">
-              Không thể tải danh sách. Vui lòng thử lại.
-            </li>
-          )}
-          {userList.map((listedUser) => (
-            <li
-              key={listedUser.userId}
-              className={`user-item ${
-                Number(listedUser.userId) === Number(receiverId)
-                  ? "selected"
-                  : ""
-              }`}
-              onClick={() => setReceiverId(listedUser.userId)}
-            >
-              {listedUser.userName}
-            </li>
-          ))}
-        </ul>
-      </div>
-      <div className="chat-area">
-        {/* các nút như logout, call video */}
-        <div className="top-bar">
-          {receiverId && (
-            <div
-              onClick={() => requestVideoCall({ video: false })}
-              className="video-call-btn"
-            >
-              <IoCall />
-              Call
+    <main className="min-h-dvh bg-canvas text-ink lg:h-dvh lg:overflow-hidden">
+      <div className="mx-auto grid min-h-dvh max-w-[1600px] grid-rows-[minmax(12rem,30dvh)_minmax(65dvh,1fr)] gap-3 p-3 sm:gap-4 sm:p-5 lg:h-full lg:min-h-0 lg:grid-cols-[19rem_minmax(0,1fr)] lg:grid-rows-1">
+        <aside className="flex min-h-0 flex-col overflow-hidden rounded-panel border border-line bg-surface shadow-panel">
+          <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-5">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">
+                Tin nhắn
+              </p>
+              <h1 className="mt-1 text-xl font-bold tracking-tight">
+                Trò chuyện
+              </h1>
             </div>
-          )}
-          {receiverId && (
-            <div
-              onClick={() => requestVideoCall({ video: true })}
-              className="video-call-btn"
-            >
-              <FaVideo />
-              Video Call
-            </div>
-          )}
-
-          {user.role === "admin" && (
-            <Link className="admin-link" to="/admin">
-              Quản trị
-            </Link>
-          )}
-          <div className="btn-logout" onClick={showConfirm}>
-            <CiLogout />
-            Logout
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-accent/10 text-sm font-bold text-accent">
+              {user?.userName?.slice(0, 1)?.toLocaleUpperCase() || "?"}
+            </span>
           </div>
-          {/* nơi hiện đoạn tin và ô input */}
-        </div>
-        {receiverId ? (
-          <>
-            {messagesQuery.isError && (
-              <div className="chat-query-error" role="alert">
-                Không thể tải tin nhắn.{" "}
-                <button onClick={() => messagesQuery.refetch()}>
+
+          <div className="flex items-center justify-between px-5 pb-2 pt-4">
+            <h2 className="text-sm font-bold">Người dùng</h2>
+            {!userListQuery.isPending && (
+              <span className="text-xs text-muted">{userList.length}</span>
+            )}
+          </div>
+          <ul
+            aria-label="Danh sách người dùng"
+            className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 pb-3"
+          >
+            {userListQuery.isPending && (
+              <li className="space-y-2 px-2 py-3" role="status">
+                <span className="block h-11 animate-pulse rounded-xl bg-surface-muted motion-reduce:animate-none" />
+                <span className="block h-11 animate-pulse rounded-xl bg-surface-muted motion-reduce:animate-none" />
+                <span className="sr-only">Đang tải danh sách người dùng</span>
+              </li>
+            )}
+            {userListQuery.isError && (
+              <li className="px-2 py-3 text-sm text-danger" role="alert">
+                <p>Không thể tải danh sách người dùng.</p>
+                <button
+                  type="button"
+                  onClick={() => userListQuery.refetch()}
+                  className="mt-2 font-semibold underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                >
                   Thử lại
                 </button>
-              </div>
+              </li>
             )}
-            <div className="message-list">
-              {messages.map((msg, index) => (
-                <div
-                  key={index}
-                  className={`message ${
-                    Number(msg.senderId) === Number(user.userId)
-                      ? "sent"
-                      : "received"
-                  }`}
+            {userList.map((listedUser) => {
+              const isSelected =
+                Number(listedUser.userId) === normalizedReceiverId;
+              return (
+                <li key={listedUser.userId}>
+                  <button
+                    type="button"
+                    aria-current={isSelected ? "true" : undefined}
+                    onClick={() => setReceiverId(listedUser.userId)}
+                    className={[
+                      "flex min-h-12 w-full items-center gap-3 rounded-xl px-3 py-2 text-left",
+                      "transition duration-200 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                      isSelected ? "bg-accent/10 text-accent" : "text-ink",
+                    ].join(" ")}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={[
+                        "grid size-9 shrink-0 place-items-center rounded-xl text-sm font-bold",
+                        isSelected
+                          ? "bg-accent text-accent-foreground"
+                          : "bg-surface-muted text-muted",
+                      ].join(" ")}
+                    >
+                      {listedUser.userName?.slice(0, 1)?.toLocaleUpperCase() ||
+                        "?"}
+                    </span>
+                    <span className="truncate text-sm font-semibold">
+                      {listedUser.userName}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+            {!userListQuery.isPending &&
+              !userListQuery.isError &&
+              userList.length === 0 && (
+                <li className="px-2 py-3 text-sm text-muted">
+                  Chưa có người dùng khác.
+                </li>
+              )}
+          </ul>
+        </aside>
+
+        <section
+          aria-label="Cuộc trò chuyện"
+          className="flex min-h-[65dvh] min-w-0 flex-col overflow-hidden rounded-panel border border-line bg-surface shadow-panel lg:min-h-0"
+        >
+          <header className="flex min-h-[4.5rem] flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-6">
+            <div className="min-w-0">
+              <p className="truncate text-base font-bold">{selectedUserName}</p>
+              <p className="mt-0.5 text-xs text-muted">
+                {selectedUser
+                  ? `Trò chuyện với ${selectedUser.userName}`
+                  : "Chọn một người dùng để bắt đầu"}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {hasValidReceiver && (
+                <>
+                  <Button
+                    variant="secondary"
+                    onClick={() => requestCall(false)}
+                    aria-label={`Gọi thoại cho ${selectedUserName}`}
+                    className="min-h-10 rounded-lg px-3"
+                  >
+                    <IoCall aria-hidden="true" />
+                    <span className="hidden sm:inline">Gọi thoại</span>
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() => requestCall(true)}
+                    aria-label={`Gọi video cho ${selectedUserName}`}
+                    className="min-h-10 rounded-lg px-3"
+                  >
+                    <FaVideo aria-hidden="true" />
+                    <span className="hidden sm:inline">Gọi video</span>
+                  </Button>
+                </>
+              )}
+              {user?.role === "admin" && (
+                <Link
+                  className="inline-flex min-h-10 items-center rounded-lg px-3 text-sm font-semibold text-accent transition hover:bg-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  to="/admin"
                 >
-                  {msg.message}
-                </div>
-              ))}
-              <div ref={messageListEndRef} />
-            </div>
-            <div className="input-area">
-              <input
-                type="text"
-                placeholder="Message"
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                onKeyDown={handleKeyDown}
-              />
-              <button
-                onClick={sendMessage}
-                disabled={sendMessageMutation.isPending}
+                  Quản trị
+                </Link>
+              )}
+              <Button
+                variant="quiet"
+                onClick={() => setIsLogoutDialogOpen(true)}
+                aria-label="Đăng xuất"
+                className="min-h-10 rounded-lg px-3"
               >
-                Send
-              </button>
+                <CiLogout aria-hidden="true" />
+                <span className="hidden sm:inline">Đăng xuất</span>
+              </Button>
             </div>
+          </header>
+
+          {hasValidReceiver ? (
+            <>
+              {messagesQuery.isError && (
+                <div
+                  className="flex items-center justify-between gap-3 border-b border-danger/30 bg-danger/5 px-4 py-3 text-sm text-danger sm:px-6"
+                  role="alert"
+                >
+                  <span>Không thể tải tin nhắn.</span>
+                  <button
+                    type="button"
+                    onClick={() => messagesQuery.refetch()}
+                    className="shrink-0 font-semibold underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger"
+                  >
+                    Thử lại
+                  </button>
+                </div>
+              )}
+              <div
+                className="flex-1 space-y-3 overflow-y-auto px-4 py-5 sm:px-7 sm:py-7"
+                role="log"
+                aria-label={`Tin nhắn với ${selectedUserName}`}
+                aria-live="polite"
+                aria-relevant="additions"
+              >
+                {messagesQuery.isPending && (
+                  <div className="space-y-3" role="status">
+                    <span className="block h-10 w-2/3 animate-pulse rounded-2xl bg-surface-muted motion-reduce:animate-none" />
+                    <span className="ml-auto block h-10 w-1/2 animate-pulse rounded-2xl bg-accent/10 motion-reduce:animate-none" />
+                    <span className="sr-only">Đang tải tin nhắn</span>
+                  </div>
+                )}
+                {!messagesQuery.isPending && messages.length === 0 && (
+                  <div className="grid min-h-full place-items-center py-10 text-center">
+                    <div className="max-w-sm">
+                      <p className="text-base font-bold">Chưa có tin nhắn</p>
+                      <p className="mt-2 text-sm leading-6 text-muted">
+                        Gửi lời chào đầu tiên để bắt đầu cuộc trò chuyện.
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {messages.map((msg, index) => {
+                  const isSent = Number(msg.senderId) === currentUserId;
+                  return (
+                    <div
+                      key={msg.MessageId ?? `${msg.senderId}-${index}`}
+                      className={`flex ${isSent ? "justify-end" : "justify-start"}`}
+                    >
+                      <p
+                        className={[
+                          "max-w-[85%] whitespace-pre-wrap break-words rounded-2xl px-4 py-3 text-sm leading-6 sm:max-w-[70%]",
+                          isSent
+                            ? "rounded-br-md bg-accent text-accent-foreground"
+                            : "rounded-bl-md bg-surface-muted text-ink",
+                        ].join(" ")}
+                      >
+                        {msg.message}
+                      </p>
+                    </div>
+                  );
+                })}
+                <div ref={messageListEndRef} />
+              </div>
+              <form
+                className="border-t border-line p-3 sm:px-6 sm:py-4"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  sendMessage();
+                }}
+              >
+                <label className="sr-only" htmlFor="chat-message">
+                  Tin nhắn mới
+                </label>
+                <div className="flex items-end gap-2 rounded-2xl border border-line bg-canvas p-2 focus-within:ring-2 focus-within:ring-accent">
+                  <textarea
+                    id="chat-message"
+                    rows={1}
+                    value={message}
+                    onChange={(event) => setMessage(event.target.value)}
+                    onKeyDown={handleMessageKeyDown}
+                    placeholder="Nhập tin nhắn..."
+                    className="max-h-32 min-h-10 flex-1 resize-y bg-transparent px-3 py-2 text-sm leading-6 text-ink placeholder:text-muted focus:outline-none"
+                  />
+                  <Button
+                    type="submit"
+                    disabled={sendMessageMutation.isPending || !message.trim()}
+                    className="min-h-10 shrink-0 rounded-xl px-4"
+                  >
+                    Gửi
+                  </Button>
+                </div>
+                <p className="mt-2 px-2 text-xs text-muted">
+                  Nhấn Enter để gửi, Shift + Enter để xuống dòng
+                </p>
+              </form>
+            </>
+          ) : (
+            <div className="grid flex-1 place-items-center px-6 py-12 text-center">
+              <div className="max-w-sm">
+                <p className="text-lg font-bold">
+                  Chọn một người để trò chuyện
+                </p>
+                <p className="mt-2 text-sm leading-6 text-muted">
+                  Danh sách người dùng đang ở bên trái.
+                </p>
+              </div>
+            </div>
+          )}
+        </section>
+      </div>
+
+      <Dialog
+        open={Boolean(incomingCall)}
+        onOpenChange={(open) => {
+          if (!open) rejectIncomingCall();
+        }}
+        title="Cuộc gọi đến"
+        description={`Bạn có muốn nhận cuộc gọi${incomingCall?.video ? " video" : ""} từ ${incomingCall?.name || "người dùng"}?`}
+        footer={
+          <>
+            <Button variant="secondary" onClick={rejectIncomingCall}>
+              Từ chối
+            </Button>
+            <Button onClick={acceptIncomingCall}>Nghe máy</Button>
           </>
+        }
+      >
+        <p className="text-sm leading-6 text-muted">
+          Bạn có thể kết thúc cuộc gọi bất cứ lúc nào.
+        </p>
+      </Dialog>
+
+      <Dialog
+        open={isLogoutDialogOpen}
+        onOpenChange={setIsLogoutDialogOpen}
+        title="Đăng xuất khỏi tài khoản?"
+        description="Bạn sẽ cần đăng nhập lại để tiếp tục trò chuyện."
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => setIsLogoutDialogOpen(false)}
+            >
+              Ở lại
+            </Button>
+            <Button
+              variant="secondary"
+              className="text-danger"
+              onClick={async () => {
+                if (await handleLogout()) {
+                  setIsLogoutDialogOpen(false);
+                }
+              }}
+            >
+              Đăng xuất
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm leading-6 text-muted">
+          Phiên đăng nhập hiện tại sẽ được đóng an toàn.
+        </p>
+      </Dialog>
+
+      <Dialog
+        open={isCallModalVisible}
+        onOpenChange={(open) => {
+          if (!open) handleCallCancel();
+        }}
+        title={callHasVideo ? "Cuộc gọi video" : "Cuộc gọi thoại"}
+        description={`Đang kết nối với ${selectedUserName}.`}
+        className="max-w-3xl"
+        footer={
+          <Button
+            variant="secondary"
+            className="text-danger"
+            onClick={handleCallCancel}
+          >
+            Kết thúc cuộc gọi
+          </Button>
+        }
+      >
+        {callHasVideo ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="overflow-hidden rounded-xl bg-slate-950">
+              <video
+                ref={localVideoRef}
+                autoPlay
+                muted
+                playsInline
+                aria-label="Hình ảnh camera của bạn"
+                className="aspect-video w-full object-cover"
+              />
+              <p className="px-3 py-2 text-xs text-white/80">Bạn</p>
+            </div>
+            <div className="overflow-hidden rounded-xl bg-slate-950">
+              <video
+                ref={remoteVideoRef}
+                autoPlay
+                playsInline
+                aria-label={`Hình ảnh camera của ${selectedUserName}`}
+                className="aspect-video w-full object-cover"
+              />
+              <p className="px-3 py-2 text-xs text-white/80">
+                {selectedUserName}
+              </p>
+            </div>
+          </div>
         ) : (
-          <div className="no-chat">
-            <p>Chọn một người dùng để bắt đầu cuộc trò chuyện.</p>
+          <div className="grid min-h-48 place-items-center rounded-xl bg-surface-muted p-6 text-center">
+            <audio
+              ref={remoteAudioRef}
+              autoPlay
+              aria-label={`Âm thanh cuộc gọi từ ${selectedUserName}`}
+              className="sr-only"
+            />
+            <div>
+              <span className="mx-auto grid size-16 place-items-center rounded-2xl bg-accent text-xl font-bold text-accent-foreground">
+                {selectedUserName.slice(0, 1).toLocaleUpperCase()}
+              </span>
+              <p className="mt-4 font-semibold">{selectedUserName}</p>
+              <p className="mt-1 text-sm text-muted">
+                Đang trò chuyện bằng giọng nói
+              </p>
+            </div>
           </div>
         )}
-      </div>
-      {/* popup cuộc gọi video */}
-      <Modal
-        title="Cuộc gọi video"
-        open={isCallModalVisible}
-        onCancel={handleCallCancel}
-        footer={[
-          <Button key="cancel" onClick={handleCallCancel}>
-            Hủy
-          </Button>,
-        ]}
-        width={800}
-      >
-        <div className="video-call-container">
-          <video ref={localVideoRef} autoPlay muted></video>
-          <video ref={remoteVideoRef} autoPlay></video>
-        </div>
-      </Modal>
+      </Dialog>
 
-      {/* popup khi đang chờ chấp nhận call video */}
-      <Modal
-        title="Đang gọi"
+      <Dialog
         open={calling}
-        onCancel={handleCallingCancel}
-        footer={[
-          <Button key="cancel" onClick={handleCallingCancel}>
-            Hủy
-          </Button>,
-        ]}
+        onOpenChange={(open) => {
+          if (!open) handleCallingCancel();
+        }}
+        title="Đang gọi"
+        description="Đang chờ người nhận trả lời."
+        footer={
+          <Button variant="secondary" onClick={handleCallingCancel}>
+            Hủy cuộc gọi
+          </Button>
+        }
       >
-        <p>Đang chờ người nhận...</p>
-      </Modal>
-    </div>
+        <div className="flex items-center gap-3">
+          <span
+            aria-hidden="true"
+            className="size-3 animate-pulse rounded-full bg-accent motion-reduce:animate-none"
+          />
+          <p className="text-sm text-muted">
+            Cuộc gọi sẽ kết nối khi người nhận chấp thuận.
+          </p>
+        </div>
+      </Dialog>
+    </main>
   );
 };
 
