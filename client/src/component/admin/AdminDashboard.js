@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { useSelector } from "react-redux";
+import { useQuery } from "@tanstack/react-query";
 import {
   Alert,
   Button,
@@ -14,6 +15,7 @@ import {
   Typography,
 } from "antd";
 import api from "../../api/client";
+import { queryKeys } from "../../api/queryKeys";
 import "./AdminDashboard.css";
 
 const { Title, Text } = Typography;
@@ -46,31 +48,21 @@ function formatDate(value) {
 function AdminDashboard() {
   const user = useSelector((state) => state.auth.user);
   const [activeTab, setActiveTab] = useState("users");
-  const [users, setUsers] = useState([]);
-  const [logs, setLogs] = useState({ items: [], total: 0 });
   const [page, setPage] = useState(1);
   const [eventType, setEventType] = useState("");
-  const [loadingUsers, setLoadingUsers] = useState(false);
-  const [loadingLogs, setLoadingLogs] = useState(false);
-  const [error, setError] = useState("");
-
-  const loadUsers = useCallback(async () => {
-    setLoadingUsers(true);
-    setError("");
-    try {
+  const [errorDismissed, setErrorDismissed] = useState(false);
+  const usersQuery = useQuery({
+    queryKey: queryKeys.adminUsers,
+    queryFn: async () => {
       const response = await api.get("/api/v1/admin/users");
-      setUsers(response.data.data);
-    } catch {
-      setError("Không thể tải danh sách người dùng. Vui lòng thử lại.");
-    } finally {
-      setLoadingUsers(false);
-    }
-  }, []);
-
-  const loadLogs = useCallback(async () => {
-    setLoadingLogs(true);
-    setError("");
-    try {
+      return response.data.data;
+    },
+    enabled: activeTab === "users",
+    staleTime: 5_000,
+  });
+  const logsQuery = useQuery({
+    queryKey: queryKeys.adminLogs(page, PAGE_SIZE, eventType),
+    queryFn: async () => {
       const response = await api.get("/api/v1/admin/logs", {
         params: {
           page,
@@ -78,21 +70,16 @@ function AdminDashboard() {
           ...(eventType ? { eventType } : {}),
         },
       });
-      setLogs(response.data.data);
-    } catch {
-      setError("Không thể tải audit log. Vui lòng thử lại.");
-    } finally {
-      setLoadingLogs(false);
-    }
-  }, [eventType, page]);
-
-  useEffect(() => {
-    if (activeTab === "users") {
-      loadUsers();
-    } else {
-      loadLogs();
-    }
-  }, [activeTab, loadLogs, loadUsers]);
+      return response.data.data;
+    },
+    enabled: activeTab === "logs",
+  });
+  const users = usersQuery.data || [];
+  const logs = logsQuery.data || { items: [], total: 0 };
+  const activeQueryError =
+    activeTab === "users" ? usersQuery.isError : logsQuery.isError;
+  const activeQueryLoading =
+    activeTab === "users" ? usersQuery.isPending : logsQuery.isPending;
 
   const userColumns = [
     {
@@ -179,21 +166,25 @@ function AdminDashboard() {
       </header>
 
       <section className="admin-content">
-        {error && (
+        {activeQueryError && !errorDismissed && (
           <Alert
             className="admin-error"
-            message={error}
+            message={
+              activeTab === "users"
+                ? "Không thể tải danh sách người dùng. Vui lòng thử lại."
+                : "Không thể tải audit log. Vui lòng thử lại."
+            }
             type="error"
             showIcon
             closable
-            onClose={() => setError("")}
+            onClose={() => setErrorDismissed(true)}
           />
         )}
         <Card className="admin-card">
           <Tabs
             activeKey={activeTab}
             onChange={(key) => {
-              setError("");
+              setErrorDismissed(false);
               setActiveTab(key);
             }}
             items={[
@@ -205,7 +196,7 @@ function AdminDashboard() {
                     rowKey="userId"
                     columns={userColumns}
                     dataSource={users}
-                    loading={loadingUsers}
+                    loading={activeQueryLoading || usersQuery.isFetching}
                     pagination={false}
                     locale={{ emptyText: "Chưa có người dùng." }}
                   />
@@ -225,6 +216,7 @@ function AdminDashboard() {
                         value={eventType}
                         options={eventOptions}
                         onChange={(value) => {
+                          setErrorDismissed(false);
                           setPage(1);
                           setEventType(value);
                         }}
@@ -235,13 +227,16 @@ function AdminDashboard() {
                       rowKey="eventId"
                       columns={logColumns}
                       dataSource={logs.items}
-                      loading={loadingLogs}
+                      loading={activeQueryLoading || logsQuery.isFetching}
                       pagination={{
                         current: page,
                         pageSize: PAGE_SIZE,
                         total: logs.total,
                         showSizeChanger: false,
-                        onChange: setPage,
+                        onChange: (nextPage) => {
+                          setErrorDismissed(false);
+                          setPage(nextPage);
+                        },
                       }}
                       locale={{ emptyText: "Chưa có audit log." }}
                     />

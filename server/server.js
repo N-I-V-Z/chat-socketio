@@ -135,7 +135,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("sendMessage", (payload = {}) => {
-    const { receiverId, message } = payload || {};
+    const { receiverId, message, messageId } = payload || {};
     const recipientId = parseUserId(receiverId);
     if (
       !recipientId ||
@@ -146,14 +146,14 @@ io.on("connection", (socket) => {
       return;
     }
 
-    io.to(userRoom(recipientId)).emit("receiveMessage", {
+    const messageEvent = {
       senderId: userId,
+      receiverId: recipientId,
+      messageId: parseUserId(messageId),
       message: message.trim(),
-    });
-    io.to(userRoom(userId)).emit("receiveMessage", {
-      senderId: userId,
-      message: message.trim(),
-    });
+    };
+    io.to(userRoom(recipientId)).emit("receiveMessage", messageEvent);
+    io.to(userRoom(userId)).emit("receiveMessage", messageEvent);
   });
 
   socket.on("videoCallRequest", (payload = {}) => {

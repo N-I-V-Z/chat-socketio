@@ -6,6 +6,7 @@ import React, {
   useMemo,
 } from "react";
 import { useDispatch, useSelector } from "react-redux";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import io from "socket.io-client";
 import config from "../config/config";
 import api, {
@@ -17,16 +18,22 @@ import "./Chat.css";
 import { CiLogout } from "react-icons/ci";
 import { FaVideo } from "react-icons/fa6";
 import { IoCall } from "react-icons/io5";
-import { useNavigate } from "react-router-dom";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { logout } from "../store/actions/authAction";
 import { Modal, notification, Button, message } from "antd";
+import { queryKeys } from "../../api/queryKeys";
+import {
+  appendSocketMessage,
+  appendUniqueMessage,
+} from "./chatQueryCache";
 const antdMessage = message; // trùng tên biến nên khai báo 1 biến khác để dùng
+const EMPTY_MESSAGES = [];
 
 const Chat = () => {
   // chuyển trang và lưu redux
   const navigate = useNavigate();
   const dispatch = useDispatch();
+  const queryClient = useQueryClient();
   const socket = useMemo(
     () =>
       io(config.API_ROOT, {
@@ -38,10 +45,45 @@ const Chat = () => {
   // thông tin người dùng, room
   const [receiverId, setReceiverId] = useState("");
   const { user } = useSelector((state) => state.auth);
-  const [userList, setUserList] = useState([]);
+  const currentUserId = Number(user?.userId);
+  const hasValidUserId =
+    Number.isSafeInteger(currentUserId) && currentUserId > 0;
+  const userListQuery = useQuery({
+    queryKey: hasValidUserId
+      ? queryKeys.chatUsers(currentUserId)
+      : ["chat-users", "disabled"],
+    queryFn: async () => {
+      const response = await api.post("/api/v1/user/getAll");
+      return response.data.data;
+    },
+    enabled: hasValidUserId,
+  });
+  const normalizedReceiverId = receiverId ? Number(receiverId) : null;
+  const hasValidReceiver =
+    Number.isSafeInteger(normalizedReceiverId) && normalizedReceiverId > 0;
+  const conversationQueryKey =
+    hasValidReceiver && hasValidUserId
+      ? queryKeys.conversation(currentUserId, normalizedReceiverId)
+      : ["conversation", "disabled"];
+  const messagesQuery = useQuery({
+    queryKey: conversationQueryKey,
+    queryFn: async () => {
+      const response = await api.post(
+        "/api/v1/message/getAllMessageOfRoom",
+        { receiverId: normalizedReceiverId }
+      );
+      return response.data.data.map((item) => ({
+        MessageId: item.MessageId,
+        senderId: Number(item.SenderId),
+        message: item.MessageText,
+      }));
+    },
+    enabled: hasValidReceiver && hasValidUserId,
+  });
+  const userList = userListQuery.data || [];
+  const messages = messagesQuery.data || EMPTY_MESSAGES;
   // liên quan đến tin nhắn
   const [message, setMessage] = useState("");
-  const [messages, setMessages] = useState([]);
   const messageListEndRef = useRef(null);
   // liên quan đến kết nối video call
   const [peerConnection, setPeerConnection] = useState(null);
@@ -49,6 +91,43 @@ const Chat = () => {
   const remoteVideoRef = useRef(null);
   const [isCallModalVisible, setIsCallModalVisible] = useState(false);
   const [calling, setCalling] = useState(false);
+  const sendMessageMutation = useMutation({
+    mutationFn: async ({ receiverId: targetId, message: text }) => {
+      const response = await api.post("/api/v1/message/addMessage", {
+        receiverId: targetId,
+        message: text,
+      });
+      return response.data.data;
+    },
+    onSuccess: (savedMessage, variables) => {
+      const queryKey = queryKeys.conversation(
+        currentUserId,
+        variables.receiverId
+      );
+      queryClient.setQueryData(queryKey, (cachedMessages) => {
+        if (!Array.isArray(cachedMessages)) {
+          return cachedMessages;
+        }
+        return appendUniqueMessage(cachedMessages, {
+          MessageId: savedMessage.MessageId,
+          senderId: currentUserId,
+          message: variables.message,
+        });
+      });
+      socket.emit("sendMessage", {
+        receiverId: variables.receiverId,
+        message: variables.message,
+        messageId: savedMessage.MessageId,
+      });
+      setMessage("");
+      queryClient.invalidateQueries({ queryKey });
+    },
+    onError: () => {
+      notification.error({
+        message: "Máy chủ đang lỗi...",
+      });
+    },
+  });
 
   useEffect(() => {
     const handleExpiredConnection = async () => {
@@ -154,9 +233,9 @@ const Chat = () => {
     };
     // người dùng tự động đăng kí vào một mảng tạm được lưu ở server
     // nhận tin nhắn
-    socket.on("receiveMessage", ({ senderId, message }) => {
-      setMessages((prevMessages) => [...prevMessages, { senderId, message }]);
-    });
+    socket.on("receiveMessage", (event) =>
+      appendSocketMessage(queryClient, currentUserId, event)
+    );
     // nhận yêu cầu call video
     socket.on("videoCallRequest", ({ from, name, video }) => {
       Modal.confirm({
@@ -251,43 +330,7 @@ const Chat = () => {
       socket.off("answer");
       socket.off("ice-candidate");
     };
-  }, [user, peerConnection, receiverId, startCall, socket]);
-
-  useEffect(() => {
-    // lấy list user đã được lưu
-    const fetchUserList = async () => {
-      try {
-        const response = await api.post("/api/v1/user/getAll");
-        setUserList(response.data.data);
-      } catch (error) {
-        console.error("Error fetching user list", error);
-      }
-    };
-    fetchUserList();
-  }, [user]);
-
-  useEffect(() => {
-    // lấy lại những tin nhắn cũ trong phòng
-    if (receiverId) {
-      const fetchMessages = async () => {
-        try {
-          const response = await api.post(
-            "/api/v1/message/getAllMessageOfRoom",
-            { receiverId }
-          );
-          setMessages(
-            response.data.data.map((m) => ({
-              senderId: Number(m.SenderId),
-              message: m.MessageText,
-            }))
-          );
-        } catch (error) {
-          console.error("Error fetching messages", error);
-        }
-      };
-      fetchMessages();
-    }
-  }, [receiverId, user]);
+  }, [user, currentUserId, queryClient, peerConnection, receiverId, startCall, socket]);
 
   // cuộn xuống cuối khi có tin nhắn mới
   useEffect(() => {
@@ -296,23 +339,12 @@ const Chat = () => {
 
   // xử lý gửi tin nhắn
   const sendMessage = async () => {
-    if (message && receiverId) {
-      socket.emit("sendMessage", {
-        receiverId,
-        message,
+    const text = message.trim();
+    if (text && hasValidReceiver && !sendMessageMutation.isPending) {
+      sendMessageMutation.mutate({
+        receiverId: normalizedReceiverId,
+        message: text,
       });
-      setMessage("");
-      try {
-        await api.post("/api/v1/message/addMessage", {
-          receiverId,
-          message,
-        });
-      } catch (error) {
-        console.error("Máy chủ đang lỗi...", error);
-        notification.error({
-          message: "Máy chủ đang lỗi...",
-        });
-      }
     }
   };
 
@@ -346,6 +378,7 @@ const Chat = () => {
     }
 
     clearAccessToken();
+    queryClient.clear();
     dispatch(logout());
     navigate("/", { replace: true });
   };
@@ -383,15 +416,25 @@ const Chat = () => {
         <h2>Danh sách</h2>
         {/* lấy list user */}
         <ul className="user-list">
-          {userList.map((user) => (
+          {userListQuery.isPending && (
+            <li className="user-item">Đang tải danh sách...</li>
+          )}
+          {userListQuery.isError && (
+            <li className="user-item">
+              Không thể tải danh sách. Vui lòng thử lại.
+            </li>
+          )}
+          {userList.map((listedUser) => (
             <li
-              key={user.userId}
+              key={listedUser.userId}
               className={`user-item ${
-                user.userId === receiverId ? "selected" : ""
+                Number(listedUser.userId) === Number(receiverId)
+                  ? "selected"
+                  : ""
               }`}
-              onClick={() => setReceiverId(user.userId)}
+              onClick={() => setReceiverId(listedUser.userId)}
             >
-              {user.userName}
+              {listedUser.userName}
             </li>
           ))}
         </ul>
@@ -431,6 +474,14 @@ const Chat = () => {
         </div>
         {receiverId ? (
           <>
+            {messagesQuery.isError && (
+              <div className="chat-query-error" role="alert">
+                Không thể tải tin nhắn.{" "}
+                <button onClick={() => messagesQuery.refetch()}>
+                  Thử lại
+                </button>
+              </div>
+            )}
             <div className="message-list">
               {messages.map((msg, index) => (
                 <div
@@ -454,7 +505,12 @@ const Chat = () => {
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyDown={handleKeyDown}
               />
-              <button onClick={sendMessage}>Send</button>
+              <button
+                onClick={sendMessage}
+                disabled={sendMessageMutation.isPending}
+              >
+                Send
+              </button>
             </div>
           </>
         ) : (
