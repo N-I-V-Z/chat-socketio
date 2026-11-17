@@ -1,37 +1,48 @@
-const { Op } = require("sequelize");
 const db = require("../models");
 const auditLogService = require("./auditLogService");
 const cacheService = require("./cacheService");
+const conversationService = require("./conversationService");
 const { conversationKey } = require("./cacheKeys");
 
 const MESSAGE_HISTORY_TTL_SECONDS = 30;
 
 const messageService = {
-  getAllMessageOfRoom: async (userId, receiverId) =>
-    cacheService.getOrLoad(
+  getAllMessageOfRoom: async (userId, receiverId) => {
+    const conversation =
+      await conversationService.getOrCreateDirectConversation(
+        userId,
+        receiverId,
+      );
+
+    return cacheService.getOrLoad(
       conversationKey(userId, receiverId),
       MESSAGE_HISTORY_TTL_SECONDS,
       () =>
         db.Message.findAll({
-          where: {
-            [Op.or]: [
-              { SenderId: userId, ReceiverId: receiverId },
-              { SenderId: receiverId, ReceiverId: userId },
-            ],
-          },
-          order: [["Timestamp", "ASC"]],
-        })
-    ),
+          where: { ConversationId: conversation.conversationId },
+          order: [
+            ["Timestamp", "ASC"],
+            ["MessageId", "ASC"],
+          ],
+        }),
+    );
+  },
 
   addMessage: async (senderId, receiverId, message) => {
     const savedMessage = await db.sequelize.transaction(async (transaction) => {
+      const conversation =
+        await conversationService.getOrCreateDirectConversation(
+          senderId,
+          receiverId,
+          { transaction },
+        );
       const savedMessage = await db.Message.create(
         {
+          ConversationId: conversation.conversationId,
           SenderId: senderId,
-          ReceiverId: receiverId,
           MessageText: message,
         },
-        { transaction }
+        { transaction },
       );
       await auditLogService.recordEvent(
         {
@@ -39,7 +50,7 @@ const messageService = {
           actorUserId: senderId,
           targetUserId: receiverId,
         },
-        { transaction }
+        { transaction },
       );
       return savedMessage;
     });
