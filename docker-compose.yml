@@ -104,7 +104,7 @@ services:
     build:
       context: ./client
       args:
-        REACT_APP_API_ROOT: ${REACT_APP_API_ROOT:-http://localhost:5000}
+        REACT_APP_API_ROOT: ${LOCAL_API_ROOT:-http://localhost:5000}
     ports:
       - "3000:80"
     depends_on:
