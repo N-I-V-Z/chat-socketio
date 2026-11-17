@@ -22,6 +22,8 @@ const authService = require("./services/authService");
 const auditLogService = require("./services/auditLogService");
 const presenceService = require("./services/presenceService");
 const redisConnection = require("./services/redisConnection");
+const configureRedisSocketAdapter = require("./services/redisSocketAdapter");
+const { createChatEventPipeline } = require("./services/kafkaChatPipeline");
 const db = require("./models");
 
 const app = express();
@@ -34,6 +36,7 @@ const io = new Server(server, {
     methods: ["GET", "POST", "PUT", "DELETE"],
   },
 });
+app.set("io", io);
 
 app.use(express.static("public"));
 app.use(
@@ -59,6 +62,8 @@ function parseUserId(value) {
   const userId = Number(value);
   return Number.isSafeInteger(userId) && userId > 0 ? userId : null;
 }
+
+const chatEventPipeline = createChatEventPipeline({ db, io });
 
 io.use(async (socket, next) => {
   const token = socket.handshake.auth?.token;
@@ -131,29 +136,6 @@ io.on("connection", (socket) => {
       });
   });
 
-  socket.on("sendMessage", (payload = {}) => {
-    const { receiverId, message, messageId, conversationId } = payload || {};
-    const recipientId = parseUserId(receiverId);
-    if (
-      !recipientId ||
-      typeof message !== "string" ||
-      !message.trim() ||
-      message.length > 4000
-    ) {
-      return;
-    }
-
-    const messageEvent = {
-      senderId: userId,
-      receiverId: recipientId,
-      messageId: parseUserId(messageId),
-      conversationId: parseUserId(conversationId),
-      message: message.trim(),
-    };
-    io.to(userRoom(recipientId)).emit("receiveMessage", messageEvent);
-    io.to(userRoom(userId)).emit("receiveMessage", messageEvent);
-  });
-
   socket.on("videoCallRequest", (payload = {}) => {
     const { to, video } = payload || {};
     const recipientId = parseUserId(to);
@@ -212,7 +194,16 @@ io.on("connection", (socket) => {
 
 const PORT = process.env.PORT || 5000;
 auditLogService.startRetentionCleanup();
-redisConnection.connect();
-server.listen(PORT, () => {
-  console.log(`Server is running at http://localhost:${PORT}`);
+
+async function startServer() {
+  await configureRedisSocketAdapter(io, redisConnection);
+  await chatEventPipeline.start();
+  server.listen(PORT, () => {
+    console.log(`Server is running at http://localhost:${PORT}`);
+  });
+}
+
+startServer().catch((error) => {
+  console.error("Could not start chat services:", error);
+  process.exitCode = 1;
 });

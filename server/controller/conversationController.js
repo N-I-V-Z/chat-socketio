@@ -1,6 +1,7 @@
 const asyncHandler = require("../middleware/asyncHandler");
 const conversationService = require("../services/conversationService");
 const messageService = require("../services/messageService");
+const readReceiptService = require("../services/readReceiptService");
 const { success } = require("../utils/apiResponse");
 const httpError = require("../utils/httpError");
 
@@ -84,8 +85,54 @@ const addMessage = asyncHandler(async (req, res) => {
   success(res, savedMessage, 201, "Message saved");
 });
 
+const getUnreadSummary = asyncHandler(async (req, res) => {
+  const unreadSummary = await readReceiptService.getUnreadSummary(
+    req.auth.userId,
+  );
+  success(res, unreadSummary);
+});
+
+const markConversationRead = asyncHandler(async (req, res) => {
+  const conversationId = parsePositiveId(
+    req.params.conversationId,
+    "INVALID_CONVERSATION_ID",
+    "A valid conversation is required",
+  );
+  const upToMessageId = parsePositiveId(
+    req.body?.upToMessageId,
+    "INVALID_MESSAGE_CURSOR",
+    "A valid message cursor is required",
+  );
+  const readState = await readReceiptService.markConversationRead(
+    req.auth.userId,
+    conversationId,
+    upToMessageId,
+  );
+  const io = req.app.get("io");
+  const event = {
+    conversationId: readState.conversationId,
+    readerId: readState.readerId,
+    upToMessageId: readState.upToMessageId,
+    readAt: readState.readAt,
+  };
+
+  for (const participantId of readState.participantUserIds) {
+    if (participantId !== readState.readerId) {
+      io.to(`user:${participantId}`).emit("conversationRead", event);
+    }
+  }
+
+  success(res, {
+    conversationId: readState.conversationId,
+    upToMessageId: readState.upToMessageId,
+    readAt: readState.readAt,
+  });
+});
+
 module.exports = {
   addMessage,
+  getUnreadSummary,
   getMessages,
   getOrCreateDirectConversation,
+  markConversationRead,
 };

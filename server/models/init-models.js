@@ -5,6 +5,8 @@ var _Conversation = require("./Conversation");
 var _ConversationParticipant = require("./ConversationParticipant");
 var _RefreshToken = require("./RefreshToken");
 var _AuditLog = require("./AuditLog");
+var _MessageReadReceipt = require("./MessageReadReceipt");
+var _OutboxEvent = require("./OutboxEvent");
 
 function initModels(sequelize) {
   var Message = _Message(sequelize, DataTypes);
@@ -13,6 +15,8 @@ function initModels(sequelize) {
   var ConversationParticipant = _ConversationParticipant(sequelize, DataTypes);
   var RefreshToken = _RefreshToken(sequelize, DataTypes);
   var AuditLog = _AuditLog(sequelize, DataTypes);
+  var MessageReadReceipt = _MessageReadReceipt(sequelize, DataTypes);
+  var OutboxEvent = _OutboxEvent(sequelize, DataTypes);
 
   Message.belongsTo(Conversation, {
     as: "Conversation",
@@ -38,6 +42,22 @@ function initModels(sequelize) {
   });
   RefreshToken.belongsTo(Users, { as: "User", foreignKey: "userId" });
   Users.hasMany(RefreshToken, { as: "RefreshTokens", foreignKey: "userId" });
+  Message.hasMany(MessageReadReceipt, {
+    as: "ReadReceipts",
+    foreignKey: "MessageId",
+  });
+  MessageReadReceipt.belongsTo(Message, {
+    as: "Message",
+    foreignKey: "MessageId",
+  });
+  Users.hasMany(MessageReadReceipt, {
+    as: "MessageReadReceipts",
+    foreignKey: "UserId",
+  });
+  MessageReadReceipt.belongsTo(Users, {
+    as: "User",
+    foreignKey: "UserId",
+  });
 
   return {
     Message,
@@ -46,6 +66,8 @@ function initModels(sequelize) {
     ConversationParticipant,
     RefreshToken,
     AuditLog,
+    MessageReadReceipt,
+    OutboxEvent,
   };
 }
 module.exports = initModels;
