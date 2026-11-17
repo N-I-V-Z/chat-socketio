@@ -1,11 +1,18 @@
 {
-  "short_name": "React App",
-  "name": "Create React App Sample",
+  "short_name": "Chat",
+  "name": "Chat — Nhắn tin và gọi trực tuyến",
+  "description": "Trò chuyện trực tuyến với tin nhắn, cuộc gọi thoại và video theo thời gian thực.",
+  "lang": "vi",
   "icons": [
-    
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
   ],
   "start_url": ".",
   "display": "standalone",
-  "theme_color": "#000000",
-  "background_color": "#ffffff"
+  "theme_color": "#f7f8fa",
+  "background_color": "#f7f8fa"
 }
