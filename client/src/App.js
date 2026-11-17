@@ -12,6 +12,7 @@ import Login from "./component/auth/Login";
 import Register from "./component/auth/Register";
 import Chat from "./component/chat/Chat";
 import AdminDashboard from "./component/admin/AdminDashboard";
+import AuthenticatedLayout from "./component/layout/AuthenticatedLayout";
 import { login, logout } from "./component/store/actions/authAction";
 import { clearAccessToken, refreshAccessToken } from "./api/client";
 
@@ -80,21 +81,18 @@ function AppRoutes() {
         element={isLoggedIn ? <Navigate to="/chat" replace /> : <Register />}
       />
       <Route
-        path="/chat"
-        element={isLoggedIn ? <Chat /> : <Navigate to="/" replace />}
-      />
-      <Route
-        path="/admin"
         element={
-          isLoggedIn && isAdmin ? (
-            <AdminDashboard />
-          ) : isLoggedIn ? (
-            <Navigate to="/chat" replace />
-          ) : (
-            <Navigate to="/" replace />
-          )
+          isLoggedIn ? <AuthenticatedLayout /> : <Navigate to="/" replace />
         }
-      />
+      >
+        <Route path="/chat" element={<Chat />} />
+        <Route
+          path="/admin"
+          element={
+            isAdmin ? <AdminDashboard /> : <Navigate to="/chat" replace />
+          }
+        />
+      </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

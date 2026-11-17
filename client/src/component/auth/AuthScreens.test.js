@@ -47,6 +47,13 @@ beforeEach(() => {
 test("login shows field errors and does not send an incomplete request", () => {
   renderAuth();
 
+  expect(
+    screen.getByRole("link", { name: "Bỏ qua điều hướng" }),
+  ).toHaveAttribute("href", "#auth-content");
+  expect(
+    screen.getByRole("heading", { name: "Đăng nhập", level: 1 }),
+  ).toBeInTheDocument();
+
   fireEvent.click(screen.getByRole("button", { name: /đăng nhập/i }));
 
   expect(screen.getByText("Nhập tên người dùng.")).toBeInTheDocument();

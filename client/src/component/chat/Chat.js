@@ -8,7 +8,7 @@ import React, {
 import { useDispatch, useSelector } from "react-redux";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import io from "socket.io-client";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import config from "../config/config";
 import api, {
   clearAccessToken,
@@ -21,7 +21,6 @@ import { appendSocketMessage, appendUniqueMessage } from "./chatQueryCache";
 import Button from "../ui/Button";
 import Dialog from "../ui/Dialog";
 import { useToast } from "../ui/ToastProvider";
-import { CiLogout } from "react-icons/ci";
 import { FaVideo } from "react-icons/fa6";
 import { IoCall } from "react-icons/io5";
 
@@ -47,7 +46,6 @@ const Chat = () => {
   const [calling, setCalling] = useState(false);
   const [callHasVideo, setCallHasVideo] = useState(false);
   const [incomingCall, setIncomingCall] = useState(null);
-  const [isLogoutDialogOpen, setIsLogoutDialogOpen] = useState(false);
   const { user } = useSelector((state) => state.auth);
   const currentUserId = Number(user?.userId);
   const hasValidUserId =
@@ -363,22 +361,6 @@ const Chat = () => {
     }
   };
 
-  const handleLogout = async () => {
-    try {
-      await api.post("/api/v1/user/logout");
-    } catch (error) {
-      console.error("Could not revoke the refresh token", error);
-      toast("Đăng xuất không thành công. Vui lòng thử lại.", "error");
-      return false;
-    }
-
-    clearAccessToken();
-    queryClient.clear();
-    dispatch(logout());
-    navigate("/", { replace: true });
-    return true;
-  };
-
   const requestCall = (video) => {
     socket.emit("videoCallRequest", {
       to: receiverId,
@@ -424,7 +406,7 @@ const Chat = () => {
   };
 
   return (
-    <main className="min-h-dvh bg-canvas text-ink lg:h-dvh lg:overflow-hidden">
+    <main className="min-h-full bg-canvas text-ink lg:h-full lg:overflow-hidden">
       <div className="mx-auto grid min-h-dvh max-w-[1600px] grid-rows-[minmax(12rem,30dvh)_minmax(65dvh,1fr)] gap-3 p-3 sm:gap-4 sm:p-5 lg:h-full lg:min-h-0 lg:grid-cols-[19rem_minmax(0,1fr)] lg:grid-rows-1">
         <aside className="flex min-h-0 flex-col overflow-hidden rounded-panel border border-line bg-surface shadow-panel">
           <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-5">
@@ -550,23 +532,6 @@ const Chat = () => {
                   </Button>
                 </>
               )}
-              {user?.role === "admin" && (
-                <Link
-                  className="inline-flex min-h-10 items-center rounded-lg px-3 text-sm font-semibold text-accent transition hover:bg-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                  to="/admin"
-                >
-                  Quản trị
-                </Link>
-              )}
-              <Button
-                variant="quiet"
-                onClick={() => setIsLogoutDialogOpen(true)}
-                aria-label="Đăng xuất"
-                className="min-h-10 rounded-lg px-3"
-              >
-                <CiLogout aria-hidden="true" />
-                <span className="hidden sm:inline">Đăng xuất</span>
-              </Button>
             </div>
           </header>
 
@@ -699,38 +664,6 @@ const Chat = () => {
       >
         <p className="text-sm leading-6 text-muted">
           Bạn có thể kết thúc cuộc gọi bất cứ lúc nào.
-        </p>
-      </Dialog>
-
-      <Dialog
-        open={isLogoutDialogOpen}
-        onOpenChange={setIsLogoutDialogOpen}
-        title="Đăng xuất khỏi tài khoản?"
-        description="Bạn sẽ cần đăng nhập lại để tiếp tục trò chuyện."
-        footer={
-          <>
-            <Button
-              variant="secondary"
-              onClick={() => setIsLogoutDialogOpen(false)}
-            >
-              Ở lại
-            </Button>
-            <Button
-              variant="secondary"
-              className="text-danger"
-              onClick={async () => {
-                if (await handleLogout()) {
-                  setIsLogoutDialogOpen(false);
-                }
-              }}
-            >
-              Đăng xuất
-            </Button>
-          </>
-        }
-      >
-        <p className="text-sm leading-6 text-muted">
-          Phiên đăng nhập hiện tại sẽ được đóng an toàn.
         </p>
       </Dialog>
 
