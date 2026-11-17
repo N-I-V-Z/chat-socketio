@@ -22,54 +22,45 @@ A real-time chat application built with React.js, Node.js, and Socket.IO, featur
    cd chat-socketio
    ```
 
-2. Install dependencies:
+2. Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) and start it.
 
-- Install dependences for Front-end
-
-   ```bash
-   cd client
-   npm install
-   ```
-
-- Install dependences for Back-end
+3. Create a root `.env` file from the example and choose a strong SQL Server password:
 
    ```bash
-   cd server
-   npm install
+   cp .env.example .env
    ```
 
-## Database Setup
-
-1. **Configure the database**:
-   - Ensure that you have SQL Server installed and running.
-   - Create a new database named `ChatDb`.
-
-2. **Run the SQL script**:
-   - Navigate to the `db` folder in your project directory.
-   - Execute the `ChatDb.sql` file to set up the database schema and initial data.
-
-   You can use SQL Server Management Studio (SSMS) or another SQL client to run the script. Open the `ChatDb.sql` file and execute it in your SQL Server environment.
-
-3. **Update configuration**:
-   - The database configuration can be found in the file `./server/config/config.js`.
-
-   Make sure the configuration matches your SQL Server setup.
-
-## Running the Application
-
-1. Start the backend server:
+4. Build and start the client, server, and SQL Server:
 
    ```bash
-   cd server
-   npm start
+   docker compose up --build
    ```
 
-2. Start the frontend application:
+   Open `http://localhost:3000`. The API is available at `http://localhost:5000`.
 
-   ```bash
-   cd client
-   npm start
-   ```
+The server creates the `ChatDb` database when needed and runs Sequelize migrations before starting. The initial migration creates the current `Users` and `Message` schema, and skips tables that already exist. SQL Server data is persisted in the `sqlserver_data` Docker volume.
+
+Stop the containers with `docker compose down`. This keeps the database volume. To permanently remove the database data as well, use `docker compose down --volumes`.
+
+## Local Development
+
+The database can still be started with Docker while running the client and server directly. Configure the database variables in `server/.env` (`DB_HOST=localhost`, `DB_PORT=1433`, `DB_USER=sa`, `DB_PASSWORD`, and `DB_NAME=ChatDb`), then run:
+
+```bash
+cd server
+npm install
+npm start
+```
+
+In another terminal:
+
+```bash
+cd client
+npm install
+npm start
+```
+
+`npm start` in the server applies pending migrations automatically. To run migrations manually, use `npm run db:migrate`; to undo the latest migration, use `npm run db:migrate:undo`. The initial baseline migration intentionally does not drop tables when undone, so it cannot accidentally delete data in an existing database.
 
 ## Configuration
 

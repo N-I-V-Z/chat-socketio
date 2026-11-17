@@ -1,12 +1,14 @@
 // models/index.js
 const Sequelize = require('sequelize');
-const config = require('../config/config.json'); // Đường dẫn đến file config của bạn
-const initModels = require('./init-models'); // Đường dẫn đến file init-models của bạn
+const config = require('../config/config')[process.env.NODE_ENV || 'development'];
+const initModels = require('./init-models');
 
-const sequelize = new Sequelize(config.development.database, config.development.username, config.development.password, {
-  host: config.development.host,
-  dialect: config.development.dialect
-});
+const sequelize = new Sequelize(
+  config.database,
+  config.username,
+  config.password,
+  config
+);
 
 const models = initModels(sequelize);
 

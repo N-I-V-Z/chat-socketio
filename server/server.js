@@ -1,3 +1,4 @@
+require("dotenv").config();
 const express = require("express");
 const session = require("express-session");
 const bodyParser = require("body-parser");
@@ -5,7 +6,6 @@ const cors = require("cors");
 const http = require("http");
 const socketIo = require("socket.io");
 const initRouters = require("./routes");
-require("dotenv").config();
 const app = express();
 const server = http.createServer(app);
 
