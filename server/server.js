@@ -20,6 +20,7 @@ const errorHandler = require("./middleware/errorHandler");
 const { failure } = require("./utils/apiResponse");
 const authService = require("./services/authService");
 const auditLogService = require("./services/auditLogService");
+const presenceService = require("./services/presenceService");
 const db = require("./models");
 
 const app = express();
@@ -101,6 +102,7 @@ io.use(async (socket, next) => {
 io.on("connection", (socket) => {
   const { userId, userName, accessTokenExpiresAt } = socket.data;
   socket.join(userRoom(userId));
+  presenceService.connect(userId, socket.id);
   auditLogService
     .recordEvent({
       eventType: auditLogService.EVENT_TYPES.PRESENCE_CONNECTED,
@@ -119,6 +121,7 @@ io.on("connection", (socket) => {
   );
   socket.on("disconnect", () => {
     clearTimeout(expiryTimer);
+    presenceService.disconnect(userId, socket.id);
     auditLogService
       .recordEvent({
         eventType: auditLogService.EVENT_TYPES.PRESENCE_DISCONNECTED,
