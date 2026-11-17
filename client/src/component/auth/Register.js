@@ -1,10 +1,9 @@
 import { message, Input, Button } from "antd";
-import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import "./Register.css";
 import Header from "../layout/Header";
-const config = require("../config/config");
+import api from "../../api/client";
 
 function Register() {
   const [userName, setUserName] = useState("");
@@ -25,7 +24,7 @@ function Register() {
       message.error("Mật khẩu xác nhận không chính xác");
     } else {
       try {
-        await axios.post(`${config.API_ROOT}/api/v1/user/register`, {
+        await api.post("/api/v1/user/register", {
           userName,
           password,
         });
@@ -33,7 +32,10 @@ function Register() {
         message.success("Đăng kí thành công");
         navigate("/");
       } catch (error) {
-        message.error(error.response.data.mes);
+        message.error(
+          error.response?.data?.error?.message ||
+            "Có lỗi xảy ra vui lòng thử lại sau..."
+        );
       }
     }
   };

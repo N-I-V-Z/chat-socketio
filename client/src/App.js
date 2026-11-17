@@ -1,19 +1,79 @@
-import React from "react";
-import { BrowserRouter as Router, Route, Routes } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import {
+  BrowserRouter as Router,
+  Navigate,
+  Route,
+  Routes,
+  useNavigate,
+} from "react-router-dom";
+import { useDispatch, useSelector } from "react-redux";
 import Login from "./component/auth/Login";
 import Register from "./component/auth/Register";
 import Chat from "./component/chat/Chat";
-import LoginSuccess from "./component/auth/LoginSuccess";
+import { login, logout } from "./component/store/actions/authAction";
+import { clearAccessToken, refreshAccessToken } from "./api/client";
+
+function AppRoutes() {
+  const dispatch = useDispatch();
+  const navigate = useNavigate();
+  const isLoggedIn = useSelector((state) => state.auth.isLoggedIn);
+  const [authReady, setAuthReady] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const handleAuthExpired = () => {
+      clearAccessToken();
+      dispatch(logout());
+      navigate("/", { replace: true });
+    };
+
+    window.addEventListener("auth:expired", handleAuthExpired);
+    refreshAccessToken()
+      .then(({ user }) => dispatch(login(user)))
+      .catch((error) => {
+        if (error.response?.status !== 401) {
+          console.error("Could not restore the login session", error);
+        }
+      })
+      .finally(() => {
+        if (active) setAuthReady(true);
+      });
+
+    return () => {
+      active = false;
+      window.removeEventListener("auth:expired", handleAuthExpired);
+    };
+  }, [dispatch, navigate]);
+
+  return (
+    <Routes>
+      <Route
+        path="/"
+        element={
+          !authReady ? null : isLoggedIn ? <Navigate to="/chat" replace /> : <Login />
+        }
+      />
+      <Route
+        path="/register"
+        element={
+          !authReady ? null : isLoggedIn ? <Navigate to="/chat" replace /> : <Register />
+        }
+      />
+      <Route
+        path="/chat"
+        element={
+          !authReady ? null : isLoggedIn ? <Chat /> : <Navigate to="/" replace />
+        }
+      />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
 
 function App() {
   return (
     <Router>
-      <Routes>
-        <Route path="/" element={<Login />} />
-        <Route path="/chat" element={<Chat />} />
-        <Route path="/login-success/:userId" element={<LoginSuccess />} />
-        <Route path="/register" element={<Register />} />
-      </Routes>
+      <AppRoutes />
     </Router>
   );
 }

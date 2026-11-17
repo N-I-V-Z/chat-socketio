@@ -1,8 +1,18 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+} from "react";
 import { useDispatch, useSelector } from "react-redux";
 import io from "socket.io-client";
-import axios from "axios";
 import config from "../config/config";
+import api, {
+  clearAccessToken,
+  getAccessToken,
+  refreshAccessToken,
+} from "../../api/client";
 import "./Chat.css";
 import { CiLogout } from "react-icons/ci";
 import { FaVideo } from "react-icons/fa6";
@@ -12,12 +22,18 @@ import { logout } from "../store/actions/authAction";
 import { Modal, notification, Button, message } from "antd";
 const antdMessage = message; // trùng tên biến nên khai báo 1 biến khác để dùng
 
-const socket = io(`${config.API_ROOT}`);
-
 const Chat = () => {
   // chuyển trang và lưu redux
   const navigate = useNavigate();
   const dispatch = useDispatch();
+  const socket = useMemo(
+    () =>
+      io(config.API_ROOT, {
+        autoConnect: false,
+        auth: (callback) => callback({ token: getAccessToken() }),
+      }),
+    []
+  );
   // thông tin người dùng, room
   const [receiverId, setReceiverId] = useState("");
   const { user } = useSelector((state) => state.auth);
@@ -32,6 +48,45 @@ const Chat = () => {
   const remoteVideoRef = useRef(null);
   const [isCallModalVisible, setIsCallModalVisible] = useState(false);
   const [calling, setCalling] = useState(false);
+
+  useEffect(() => {
+    const handleExpiredConnection = async () => {
+      try {
+        await refreshAccessToken();
+        socket.connect();
+      } catch (error) {
+        if (error.response?.status === 401) {
+          clearAccessToken();
+          dispatch(logout());
+          navigate("/", { replace: true });
+          return;
+        }
+        notification.error({
+          message: "Không thể gia hạn phiên đăng nhập. Vui lòng thử lại.",
+        });
+      }
+    };
+    const handleConnectError = (error) => {
+      if (error.data?.code === "ACCESS_TOKEN_EXPIRED") {
+        handleExpiredConnection();
+      }
+    };
+    const handleDisconnect = (reason) => {
+      if (reason === "io server disconnect") {
+        handleExpiredConnection();
+      }
+    };
+
+    socket.on("connect_error", handleConnectError);
+    socket.on("disconnect", handleDisconnect);
+    socket.connect();
+
+    return () => {
+      socket.off("connect_error", handleConnectError);
+      socket.off("disconnect", handleDisconnect);
+      socket.disconnect();
+    };
+  }, [dispatch, navigate, socket]);
 
   // hàm xử lý khi cuộc gọi thật sự bắt đầu
   const startCall = useCallback(
@@ -79,7 +134,7 @@ const Chat = () => {
         antdMessage.error("Error accessing media devices or starting call"); // báo lỗi khi không có quyền truy cập camera hoặc audio
       }
     },
-    [receiverId]
+    [receiverId, socket]
   );
 
   // useEffect này dùng để đón các thông tin từ socket gửi về
@@ -97,7 +152,6 @@ const Chat = () => {
       startCall(video);
     };
     // người dùng tự động đăng kí vào một mảng tạm được lưu ở server
-    socket.emit("register", user.userId);
     // nhận tin nhắn
     socket.on("receiveMessage", ({ senderId, message }) => {
       setMessages((prevMessages) => [...prevMessages, { senderId, message }]);
@@ -196,16 +250,13 @@ const Chat = () => {
       socket.off("answer");
       socket.off("ice-candidate");
     };
-  }, [user, peerConnection, receiverId, startCall]);
+  }, [user, peerConnection, receiverId, startCall, socket]);
 
   useEffect(() => {
     // lấy list user đã được lưu
     const fetchUserList = async () => {
       try {
-        const response = await axios.post(
-          `${config.API_ROOT}/api/v1/user/getAll`,
-          { userId: user.userId }
-        );
+        const response = await api.post("/api/v1/user/getAll");
         setUserList(response.data.data);
       } catch (error) {
         console.error("Error fetching user list", error);
@@ -219,9 +270,9 @@ const Chat = () => {
     if (receiverId) {
       const fetchMessages = async () => {
         try {
-          const response = await axios.post(
-            `${config.API_ROOT}/api/v1/message/getAllMessageOfRoom`,
-            { senderId: user.userId, receiverId }
+          const response = await api.post(
+            "/api/v1/message/getAllMessageOfRoom",
+            { receiverId }
           );
           setMessages(
             response.data.data.map((m) => ({
@@ -246,25 +297,15 @@ const Chat = () => {
   const sendMessage = async () => {
     if (message && receiverId) {
       socket.emit("sendMessage", {
-        senderId: user.userId,
         receiverId,
         message,
       });
       setMessage("");
       try {
-        const response = await axios.post(
-          `${config.API_ROOT}/api/v1/message/addMessage`,
-          {
-            senderId: user.userId,
-            receiverId,
-            message,
-          }
-        );
-        if (response.data.err !== 0) {
-          notification.error({
-            message: "Lưu tin nhắn thất bại.",
-          });
-        }
+        await api.post("/api/v1/message/addMessage", {
+          receiverId,
+          message,
+        });
       } catch (error) {
         console.error("Máy chủ đang lỗi...", error);
         notification.error({
@@ -292,15 +333,24 @@ const Chat = () => {
     });
   };
   // đăng xuất
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await api.post("/api/v1/user/logout");
+    } catch (error) {
+      console.error("Could not revoke the refresh token", error);
+      notification.error({
+        message: "Đăng xuất không thành công. Vui lòng thử lại.",
+      });
+      return;
+    }
+
+    clearAccessToken();
     dispatch(logout());
-    navigate(`/`);
+    navigate("/", { replace: true });
   };
   // gửi yêu cầu call video
   const requestVideoCall = ({ video }) => {
     socket.emit("videoCallRequest", {
-      from: user.userId,
-      name: user.userName,
       to: receiverId,
       video: video,
     });

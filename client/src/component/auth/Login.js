@@ -1,15 +1,17 @@
 import { message, Input, Button } from "antd";
-import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
+import { useDispatch } from "react-redux";
 import "./Login.css";
 import Header from "../layout/Header";
-import config from "../config/config";
+import api, { setAccessToken } from "../../api/client";
+import { login } from "../store/actions/authAction";
 
 function Login() {
   const [userName, setUserName] = useState("");
   const [password, setPassword] = useState("");
   const navigate = useNavigate();
+  const dispatch = useDispatch();
 
   const handleClear = () => {
     setUserName("");
@@ -21,19 +23,22 @@ function Login() {
       message.error("Vui lòng nhập đầy đủ thông tin");
     } else {
       try {
-        const response = await axios.post(
-          `${config.API_ROOT}/api/v1/user/login`,
-          {
-            userName,
-            password,
-          }
-        );
-        const userId = response.data.data.userId;        
-        navigate(`/login-success/${userId}`);
+        const response = await api.post("/api/v1/user/login", {
+          userName,
+          password,
+        });
+        const { accessToken, user } = response.data.data;
+        setAccessToken(accessToken);
+        dispatch(login(user));
+        navigate("/chat", { replace: true });
       } catch (error) {
-        if (error.response?.status === 404)
+        if (error.response?.status === 401)
           message.error("Sai tài khoản hoặc mật khẩu");
-        else message.error("Có lỗi xảy ra vui lòng thử lại sau...");
+        else
+          message.error(
+            error.response?.data?.error?.message ||
+              "Có lỗi xảy ra vui lòng thử lại sau..."
+          );
       }
     }
   };

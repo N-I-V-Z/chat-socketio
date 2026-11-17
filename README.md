@@ -24,7 +24,7 @@ A real-time chat application built with React.js, Node.js, and Socket.IO, featur
 
 2. Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) and start it.
 
-3. Create a root `.env` file from the example and choose a strong SQL Server password:
+3. Create a root `.env` file from the example, choose a strong SQL Server password, and replace `JWT_ACCESS_SECRET` with a random value of at least 32 bytes (for example, `openssl rand -hex 32`):
 
    ```bash
    cp .env.example .env
@@ -42,9 +42,11 @@ The server creates the `ChatDb` database when needed and runs Sequelize migratio
 
 Stop the containers with `docker compose down`. This keeps the database volume. To permanently remove the database data as well, use `docker compose down --volumes`.
 
+Access tokens expire after 15 minutes. Refresh tokens are rotated, stored only as SHA-256 hashes in the database, and sent to the browser as an `HttpOnly` cookie. Set `COOKIE_SECURE=true` when serving over HTTPS. New passwords are bcrypt-hashed, and the auth migration hashes existing plaintext passwords. The auth migration adds a unique username index, so resolve any duplicate usernames in an existing database before starting the new version.
+
 ## Local Development
 
-The database can still be started with Docker while running the client and server directly. Configure the database variables in `server/.env` (`DB_HOST=localhost`, `DB_PORT=1433`, `DB_USER=sa`, `DB_PASSWORD`, and `DB_NAME=ChatDb`), then run:
+The database can still be started with Docker while running the client and server directly. Put `DB_HOST=localhost`, `DB_PORT=1433`, `DB_USER=sa`, `DB_PASSWORD`, `DB_NAME=ChatDb`, and a random `JWT_ACCESS_SECRET` of at least 32 bytes in the root `.env` file. For local HTTP, use `COOKIE_SECURE=false`. Then run:
 
 ```bash
 cd server
@@ -66,6 +68,10 @@ npm start
 
 - Ensure that the backend server is running on `http://localhost:5000`.
 - The frontend application runs on `http://localhost:3000`.
+
+## API Responses
+
+Successful endpoints return `{ "success": true, "data": ..., "message": ... }`. Errors return `{ "success": false, "data": null, "error": { "code": "...", "message": "..." } }`. HTTP status codes remain meaningful; logout is a JSON `200` response, and unknown routes use the same error envelope.
 
 ## Usage
 
