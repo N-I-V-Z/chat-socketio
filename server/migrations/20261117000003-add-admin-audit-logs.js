@@ -25,7 +25,7 @@ module.exports = {
     await queryInterface.bulkUpdate(
       "Users",
       { role: "admin" },
-      { userName: "nivz" }
+      { userName: "nivz" },
     );
 
     if (!(await queryInterface.tableExists("AuditLogs"))) {

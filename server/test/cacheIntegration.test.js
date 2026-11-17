@@ -4,19 +4,32 @@ const db = require("../models");
 const authService = require("../services/authService");
 const cacheService = require("../services/cacheService");
 const cacheKeys = require("../services/cacheKeys");
+const conversationService = require("../services/conversationService");
 const messageService = require("../services/messageService");
 const userService = require("../services/userService");
 
 test("conversation cache keys are stable regardless of participant order", () => {
-  assert.equal(
-    cacheKeys.conversationKey(7, 3),
-    "messages:room:v1:3:7"
-  );
+  assert.equal(cacheKeys.conversationKey(7, 3), "messages:room:v1:3:7");
   assert.equal(
     cacheKeys.conversationKey(3, 7),
-    cacheKeys.conversationKey(7, 3)
+    cacheKeys.conversationKey(7, 3),
   );
   assert.throws(() => cacheKeys.conversationKey(0, 7), /valid user IDs/);
+});
+
+test("conversation page keys separate the latest page from cursor pages", () => {
+  assert.equal(
+    cacheKeys.conversationPageKey(12),
+    "messages:conversation:v1:12:latest",
+  );
+  assert.equal(
+    cacheKeys.conversationPageKey(12, 45),
+    "messages:conversation:v1:12:before:45",
+  );
+  assert.throws(
+    () => cacheKeys.conversationPageKey(12, 0),
+    /valid message cursor/,
+  );
 });
 
 test("user list cache stores shared user data and filters the current user", async () => {
@@ -48,8 +61,16 @@ test("user list cache stores shared user data and filters the current user", asy
 test("message history uses a symmetric 30-second room cache key", async () => {
   const originalGetOrLoad = cacheService.getOrLoad;
   const originalFindAll = db.Message.findAll;
+  const originalGetOrCreateDirectConversation =
+    conversationService.getOrCreateDirectConversation;
   const requests = [];
-  db.Message.findAll = async () => [];
+  db.Message.findAll = async (options) => {
+    assert.deepEqual(options.where, { ConversationId: 33 });
+    return [];
+  };
+  conversationService.getOrCreateDirectConversation = async () => ({
+    conversationId: 33,
+  });
   cacheService.getOrLoad = async (key, ttl, loader) => {
     requests.push({ key, ttl });
     return loader();
@@ -65,6 +86,8 @@ test("message history uses a symmetric 30-second room cache key", async () => {
   } finally {
     db.Message.findAll = originalFindAll;
     cacheService.getOrLoad = originalGetOrLoad;
+    conversationService.getOrCreateDirectConversation =
+      originalGetOrCreateDirectConversation;
   }
 });
 
@@ -73,6 +96,8 @@ test("message history cache invalidates only after the write transaction commits
   const originalMessageCreate = db.Message.create;
   const originalAuditCreate = db.AuditLog.create;
   const originalInvalidate = cacheService.invalidate;
+  const originalGetOrCreateDirectConversation =
+    conversationService.getOrCreateDirectConversation;
   let transactionCommitted = false;
   let invalidatedKey;
   db.sequelize.transaction = async (callback) => {
@@ -82,11 +107,23 @@ test("message history cache invalidates only after the write transaction commits
   };
   db.Message.create = async (values, options) => {
     assert.equal(options.transaction.id, "transaction");
+    assert.equal(values.ConversationId, 33);
+    assert.equal(values.ReceiverId, undefined);
     return { MessageId: 11, ...values };
   };
   db.AuditLog.create = async (values, options) => {
     assert.equal(options.transaction.id, "transaction");
     return values;
+  };
+  conversationService.getOrCreateDirectConversation = async (
+    senderId,
+    receiverId,
+    options,
+  ) => {
+    assert.equal(senderId, 7);
+    assert.equal(receiverId, 3);
+    assert.equal(options.transaction.id, "transaction");
+    return { conversationId: 33 };
   };
   cacheService.invalidate = async (key) => {
     assert.equal(transactionCommitted, true);
@@ -103,6 +140,8 @@ test("message history cache invalidates only after the write transaction commits
     db.Message.create = originalMessageCreate;
     db.AuditLog.create = originalAuditCreate;
     cacheService.invalidate = originalInvalidate;
+    conversationService.getOrCreateDirectConversation =
+      originalGetOrCreateDirectConversation;
   }
 });
 

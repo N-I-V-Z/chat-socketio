@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const migration = require("../migrations/20261118000000-add-admin-audit-logs");
+const migration = require("../migrations/20261117000003-add-admin-audit-logs");
 
 function createQueryInterface() {
   const tables = new Set(["Users"]);
@@ -76,7 +76,7 @@ test("admin audit migration adds a default role, promotes nivz, and creates inde
   assert.equal(fields.MessageText, undefined);
   assert.deepEqual(
     queryInterface.addedIndexes.map(({ options }) => options.name).sort(),
-    ["IX_AuditLogs_eventType", "IX_AuditLogs_occurredAt"]
+    ["IX_AuditLogs_eventType", "IX_AuditLogs_occurredAt"],
   );
 });
 

@@ -1,4 +1,5 @@
 const db = require("../models");
+const { USER_ROLES } = require("../constants/userRole");
 const { failure } = require("../utils/apiResponse");
 
 module.exports = async (req, res, next) => {
@@ -11,7 +12,7 @@ module.exports = async (req, res, next) => {
       return failure(res, 401, "UNAUTHORIZED", "Authentication required");
     }
 
-    if (user.role !== "admin") {
+    if (user.role !== USER_ROLES.ADMIN) {
       return failure(res, 403, "FORBIDDEN", "Administrator access required");
     }
 

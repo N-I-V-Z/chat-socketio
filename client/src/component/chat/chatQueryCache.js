@@ -5,7 +5,7 @@ function appendUniqueMessage(messages, message) {
     message.MessageId !== null &&
     message.MessageId !== undefined &&
     messages.some(
-      (existing) => String(existing.MessageId) === String(message.MessageId)
+      (existing) => String(existing.MessageId) === String(message.MessageId),
     )
   ) {
     return messages;
@@ -13,48 +13,88 @@ function appendUniqueMessage(messages, message) {
   return [...messages, message];
 }
 
+function appendInfiniteMessage(queryData, message) {
+  if (
+    !queryData ||
+    !Array.isArray(queryData.pages) ||
+    queryData.pages.length === 0
+  ) {
+    return queryData;
+  }
+
+  if (
+    queryData.pages.some(
+      (page) =>
+        Array.isArray(page.items) &&
+        page.items.some(
+          (existing) =>
+            existing.MessageId !== null &&
+            existing.MessageId !== undefined &&
+            String(existing.MessageId) === String(message.MessageId),
+        ),
+    )
+  ) {
+    return queryData;
+  }
+
+  const lastPageIndex = queryData.pages.length - 1;
+  const lastPage = queryData.pages[lastPageIndex];
+  if (!Array.isArray(lastPage.items)) {
+    return queryData;
+  }
+
+  const pages = [...queryData.pages];
+  pages[lastPageIndex] = {
+    ...lastPage,
+    items: appendUniqueMessage(lastPage.items, message),
+  };
+  return { ...queryData, pages };
+}
+
+function appendConversationMessage(queryClient, conversationId, message) {
+  const queryKey = queryKeys.conversation(conversationId);
+  const currentData = queryClient.getQueryData(queryKey);
+  if (!currentData || !Array.isArray(currentData.pages)) {
+    return false;
+  }
+
+  const nextData = appendInfiniteMessage(currentData, message);
+  if (nextData !== currentData) {
+    queryClient.setQueryData(queryKey, nextData);
+  }
+  return true;
+}
+
 function appendSocketMessage(queryClient, currentUserId, event) {
   const userId = Number(currentUserId);
   const senderId = Number(event.senderId);
   const receiverId = Number(event.receiverId);
-  const otherUserId =
-    senderId === userId ? receiverId : senderId;
+  const conversationId = Number(event.conversationId);
 
   if (
     !Number.isSafeInteger(userId) ||
     userId < 1 ||
     !Number.isSafeInteger(senderId) ||
     senderId < 1 ||
-    !Number.isSafeInteger(otherUserId) ||
-    otherUserId < 1 ||
+    !Number.isSafeInteger(receiverId) ||
+    receiverId < 1 ||
+    !Number.isSafeInteger(conversationId) ||
+    conversationId < 1 ||
     typeof event.message !== "string"
   ) {
     return false;
   }
 
-  if (
-    senderId !== userId &&
-    Number.isSafeInteger(receiverId) &&
-    receiverId !== userId
-  ) {
+  if (senderId !== userId && receiverId !== userId) {
     return false;
   }
 
-  const queryKey = queryKeys.conversation(userId, otherUserId);
-  const currentMessages = queryClient.getQueryData(queryKey);
-  if (!Array.isArray(currentMessages)) {
-    return false;
-  }
-
-  const nextMessages = appendUniqueMessage(currentMessages, {
+  return appendConversationMessage(queryClient, conversationId, {
     MessageId: event.messageId ?? null,
-    senderId,
-    message: event.message,
+    ConversationId: conversationId,
+    SenderId: senderId,
+    MessageText: event.message,
   });
-  if (nextMessages !== currentMessages) {
-    queryClient.setQueryData(queryKey, nextMessages);
-  }
-  return true;
 }
 
-export { appendSocketMessage, appendUniqueMessage };
+export { appendConversationMessage, appendSocketMessage, appendUniqueMessage };

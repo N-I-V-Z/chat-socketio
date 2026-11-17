@@ -46,15 +46,19 @@ Stop the containers with `docker compose down`. This keeps the database volume. 
 
 Access tokens expire after 15 minutes. Refresh tokens are rotated, stored only as SHA-256 hashes in the database, and sent to the browser as an `HttpOnly` cookie. Set `COOKIE_SECURE=true` when serving over HTTPS. New passwords are bcrypt-hashed, and the auth migration hashes existing plaintext passwords. The auth migration adds a unique username index, so resolve any duplicate usernames in an existing database before starting the new version.
 
-The server applies pending Sequelize migrations before starting. The admin migration adds user roles and audit-log storage, promotes the existing `nivz` account to admin, and gives new accounts the `user` role. It does not grant admin access to a newly registered account just because its username is `nivz`.
+The server applies pending Sequelize migrations before starting. Migration filenames use the current date followed by a six-digit sequence. The admin migration adds user roles and audit-log storage, promotes the existing `nivz` account to admin, and gives new accounts the `user` role. It does not grant admin access to a newly registered account just because its username is `nivz`.
+
+Roles are restricted to `user` and `admin` by a named SQL Server `CHECK` constraint. The migration validates existing values before enforcing the constraint, so unexpected role values must be resolved rather than silently converted.
+
+Messages belong to conversations, with membership recorded separately in `ConversationParticipants`. Existing direct messages are backfilled into one conversation per user pair. The chat API returns the newest 30 messages first; clients request earlier pages with the exclusive `beforeMessageId` cursor. Selecting a user resolves or creates their direct conversation.
 
 ## Caching
 
 Docker Compose starts Redis on the private application network; its port is not published to the host. Redis persistence is disabled and memory is limited to 128 MB with an LRU eviction policy. The database remains the source of truth.
 
-The server caches the user directory for 60 seconds and conversation history for 30 seconds. Conversation entries include message text and are volatile: they are not written to disk and are invalidated after successful writes. If Redis is unavailable, the server logs the failure and loads data from SQL Server instead. For local development, `REDIS_URL` is optional; leave it unset to run without Redis, or point it to a Redis instance reachable by the server.
+The server caches the user directory for 60 seconds and each conversation-history page for 30 seconds. Conversation entries include message text and are volatile: they are not written to disk; successful writes invalidate the latest page. If Redis is unavailable, the server logs the failure and loads data from SQL Server instead. For local development, `REDIS_URL` is optional; leave it unset to run without Redis, or point it to a Redis instance reachable by the server.
 
-The client uses TanStack Query to cache chat and admin responses in browser memory. Queries are considered fresh for up to 30 seconds by default and unused data is garbage-collected after five minutes. Logging out clears the client query cache.
+The client uses TanStack Query to cache chat and admin responses in browser memory. Chat history uses 30-message pages and loads earlier messages when scrolling to the top while preserving the visible scroll position. Queries are considered fresh for up to 30 seconds by default and unused data is garbage-collected after five minutes. Logging out clears the client query cache.
 
 ## Local Development
 
