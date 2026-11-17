@@ -23,9 +23,9 @@ export const refreshAccessToken = () => {
   if (!refreshRequest) {
     refreshRequest = axios
       .post(
-        `${config.API_ROOT}/api/v1/user/refresh`,
+        `${config.API_ROOT}/api/v1/auth/refresh`,
         {},
-          { withCredentials: true, timeout: 10000 }
+        { withCredentials: true, timeout: 10000 },
       )
       .then((response) => {
         const session = response.data.data;
@@ -52,8 +52,8 @@ api.interceptors.response.use(
     const request = error.config;
     const isAuthEndpoint =
       request?.url &&
-      /\/api\/v1\/user\/(login|register|refresh|logout)(?:\?|$)/.test(
-        request.url
+      /\/api\/v1\/auth\/(login|register|refresh|logout)(?:\?|$)/.test(
+        request.url,
       );
 
     if (
@@ -79,7 +79,7 @@ api.interceptors.response.use(
       }
       return Promise.reject(refreshError);
     }
-  }
+  },
 );
 
 export default api;

@@ -11,32 +11,36 @@ function parseReceiverId(value) {
   return receiverId;
 }
 
-const getAllMessageOfRoom = asyncHandler(async (req, res) => {
-  const receiverId = parseReceiverId(req.body?.receiverId);
+const listMessages = asyncHandler(async (req, res) => {
+  const receiverId = parseReceiverId(req.query?.receiverId);
   const messages = await messageService.getAllMessageOfRoom(
     req.auth.userId,
-    receiverId
+    receiverId,
   );
   success(res, messages);
 });
 
-const addMessage = asyncHandler(async (req, res) => {
+const createMessage = asyncHandler(async (req, res) => {
   const receiverId = parseReceiverId(req.body?.receiverId);
   const message = req.body?.message;
 
   if (typeof message !== "string" || !message.trim() || message.length > 4000) {
-    throw httpError(400, "INVALID_MESSAGE", "Message must contain 1-4000 characters");
+    throw httpError(
+      400,
+      "INVALID_MESSAGE",
+      "Message must contain 1-4000 characters",
+    );
   }
 
   const savedMessage = await messageService.addMessage(
     req.auth.userId,
     receiverId,
-    message.trim()
+    message.trim(),
   );
   success(res, savedMessage, 201, "Message saved");
 });
 
 module.exports = {
-  addMessage,
-  getAllMessageOfRoom,
+  createMessage,
+  listMessages,
 };

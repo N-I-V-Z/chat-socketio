@@ -107,7 +107,7 @@ const Chat = () => {
       ? queryKeys.chatUsers(currentUserId)
       : ["chat-users", "disabled"],
     queryFn: async () => {
-      const response = await api.post("/api/v1/user/getAll");
+      const response = await api.get("/api/v1/users");
       return response.data.data;
     },
     enabled: hasValidUserId,
@@ -117,7 +117,7 @@ const Chat = () => {
       ? queryKeys.unreadSummary(currentUserId)
       : ["conversation-unread", "disabled"],
     queryFn: async () => {
-      const response = await api.get("/api/v1/conversations/unread");
+      const response = await api.get("/api/v1/conversations/unread-summary");
       return response.data.data;
     },
     enabled: hasValidUserId,
@@ -129,9 +129,9 @@ const Chat = () => {
   const directConversationQuery = useQuery({
     queryKey: directConversationQueryKey,
     queryFn: async () => {
-      const response = await api.post("/api/v1/conversations/direct", {
-        otherUserId: normalizedReceiverId,
-      });
+      const response = await api.put(
+        `/api/v1/conversations/direct/${normalizedReceiverId}`,
+      );
       const conversationId = Number(response.data?.data?.conversationId);
       if (!Number.isSafeInteger(conversationId) || conversationId < 1) {
         throw new Error("The direct conversation response is invalid.");
@@ -326,8 +326,8 @@ const Chat = () => {
 
   const markReadMutation = useMutation({
     mutationFn: async ({ targetConversationId, upToMessageId }) => {
-      const response = await api.post(
-        `/api/v1/conversations/${targetConversationId}/read`,
+      const response = await api.put(
+        `/api/v1/conversations/${targetConversationId}/read-receipt`,
         { upToMessageId },
       );
       return response.data.data;

@@ -28,8 +28,8 @@ function parseOtherUserId(value) {
   );
 }
 
-const getOrCreateDirectConversation = asyncHandler(async (req, res) => {
-  const otherUserId = parseOtherUserId(req.body?.otherUserId);
+const putDirectConversation = asyncHandler(async (req, res) => {
+  const otherUserId = parseOtherUserId(req.params.otherUserId);
   const conversation = await conversationService.getOrCreateDirectConversation(
     req.auth.userId,
     otherUserId,
@@ -92,7 +92,7 @@ const getUnreadSummary = asyncHandler(async (req, res) => {
   success(res, unreadSummary);
 });
 
-const markConversationRead = asyncHandler(async (req, res) => {
+const updateConversationReadReceipt = asyncHandler(async (req, res) => {
   const conversationId = parsePositiveId(
     req.params.conversationId,
     "INVALID_CONVERSATION_ID",
@@ -133,6 +133,6 @@ module.exports = {
   addMessage,
   getUnreadSummary,
   getMessages,
-  getOrCreateDirectConversation,
-  markConversationRead,
+  putDirectConversation,
+  updateConversationReadReceipt,
 };

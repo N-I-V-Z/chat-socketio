@@ -86,8 +86,12 @@ Kafka events contain identifiers rather than message bodies. Consumers load the 
 
 The authenticated conversation API exposes unread counts per peer and accepts a `upToMessageId` cursor to mark messages read. The cursor must belong to the conversation, and receipt writes are idempotent. Existing messages are backfilled as read for current participants during migration because their historical read state is unknown. The chat marks a cursor after its message becomes sufficiently visible, displays unread badges beside contacts, and shows “Đã xem” for the latest outgoing message the other participant has read. Group-chat UI is not included.
 
-- `GET /api/v1/conversations/unread` returns the authenticated user's unread counts.
-- `POST /api/v1/conversations/:conversationId/read` accepts `{ "upToMessageId": 123 }`.
+- `GET /api/v1/users` lists users available to the authenticated user; `GET /api/v1/users/me` returns the current user.
+- `GET /api/v1/messages?receiverId={userId}` lists direct messages; `POST /api/v1/messages` creates one.
+- `PUT /api/v1/conversations/direct/:otherUserId` gets or creates the current user's direct conversation.
+- `GET /api/v1/conversations/unread-summary` returns the authenticated user's unread counts.
+- `GET` and `POST /api/v1/conversations/:conversationId/messages` list and create conversation messages.
+- `PUT /api/v1/conversations/:conversationId/read-receipt` accepts `{ "upToMessageId": 123 }`.
 - Socket.IO emits `conversationRead` to the other conversation participants after a read update.
 
 Message times use the browser's local time in `HH:mm` format. Messages are grouped under “Hôm nay”, “Hôm qua”, a Vietnamese weekday for recent days, or `dd/MM/yyyy` for older dates. Messages with a null legacy timestamp appear under “Không rõ thời gian” and do not receive a fabricated time.

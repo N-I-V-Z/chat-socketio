@@ -26,7 +26,7 @@ function invoke(handler, req) {
   });
 }
 
-test("mark-read emits conversation state to other participants only", async () => {
+test("updating read receipt emits conversation state to other participants only", async () => {
   const emitted = [];
   const restores = [
     replace(readReceiptService, "markConversationRead", async (...args) => {
@@ -42,25 +42,28 @@ test("mark-read emits conversation state to other participants only", async () =
   ];
 
   try {
-    const response = await invoke(conversationController.markConversationRead, {
-      auth: { userId: 7 },
-      params: { conversationId: "55" },
-      body: { upToMessageId: 18 },
-      app: {
-        get(name) {
-          assert.equal(name, "io");
-          return {
-            to(room) {
-              return {
-                emit(eventName, payload) {
-                  emitted.push({ room, eventName, payload });
-                },
-              };
-            },
-          };
+    const response = await invoke(
+      conversationController.updateConversationReadReceipt,
+      {
+        auth: { userId: 7 },
+        params: { conversationId: "55" },
+        body: { upToMessageId: 18 },
+        app: {
+          get(name) {
+            assert.equal(name, "io");
+            return {
+              to(room) {
+                return {
+                  emit(eventName, payload) {
+                    emitted.push({ room, eventName, payload });
+                  },
+                };
+              },
+            };
+          },
         },
       },
-    });
+    );
 
     assert.deepEqual(
       emitted.map(({ room, eventName }) => [room, eventName]),

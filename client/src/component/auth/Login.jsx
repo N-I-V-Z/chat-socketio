@@ -35,7 +35,7 @@ function Login() {
 
     setIsSubmitting(true);
     try {
-      const response = await api.post("/api/v1/user/login", {
+      const response = await api.post("/api/v1/auth/login", {
         userName: userName.trim(),
         password,
       });

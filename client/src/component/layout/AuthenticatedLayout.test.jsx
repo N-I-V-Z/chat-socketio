@@ -101,7 +101,7 @@ test("revokes the refresh token and clears the authenticated session on logout",
   fireEvent.click(within(dialog).getByRole("button", { name: "Đăng xuất" }));
 
   expect(await screen.findByText("Đã đăng xuất")).toBeInTheDocument();
-  expect(api.post).toHaveBeenCalledWith("/api/v1/user/logout");
+  expect(api.post).toHaveBeenCalledWith("/api/v1/auth/logout");
   expect(clearAccessToken).toHaveBeenCalledTimes(1);
   expect(clearQueryCache).toHaveBeenCalledTimes(1);
   expect(store.getState().auth.isLoggedIn).toBe(false);

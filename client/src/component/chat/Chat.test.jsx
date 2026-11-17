@@ -44,6 +44,7 @@ jest.mock("../../api/client", () => ({
   default: {
     post: jest.fn(),
     get: jest.fn(),
+    put: jest.fn(),
   },
   clearAccessToken: jest.fn(),
   getAccessToken: jest.fn(),
@@ -126,16 +127,6 @@ beforeEach(() => {
   });
   io.mockReturnValue(mockSocket);
   api.post.mockImplementation((path, payload) => {
-    if (path === "/api/v1/user/getAll") {
-      return Promise.resolve({
-        data: { data: [{ userId: 9, userName: "member" }] },
-      });
-    }
-    if (path === "/api/v1/conversations/direct") {
-      return Promise.resolve({
-        data: { data: { conversationId: 55 } },
-      });
-    }
     if (path === "/api/v1/conversations/55/messages") {
       return Promise.resolve({
         data: {
@@ -148,7 +139,15 @@ beforeEach(() => {
         },
       });
     }
-    if (path === "/api/v1/conversations/55/read") {
+    return Promise.resolve({ data: { data: {} } });
+  });
+  api.put.mockImplementation((_path, payload) => {
+    if (_path === "/api/v1/conversations/direct/9") {
+      return Promise.resolve({
+        data: { data: { conversationId: 55 } },
+      });
+    }
+    if (_path === "/api/v1/conversations/55/read-receipt") {
       return Promise.resolve({
         data: {
           data: {
@@ -165,28 +164,30 @@ beforeEach(() => {
     Promise.resolve({
       data: {
         data:
-          path === "/api/v1/conversations/unread"
-            ? []
-            : {
-                items: [
-                  {
-                    MessageId: 1,
-                    ConversationId: 55,
-                    SenderId: 7,
-                    MessageText: "Tin nhắn của tôi",
-                    readReceipts: [],
-                  },
-                  {
-                    MessageId: 2,
-                    ConversationId: 55,
-                    SenderId: 9,
-                    MessageText: "Tin nhắn của bạn",
-                    readReceipts: [],
-                  },
-                ],
-                hasMore: false,
-                nextCursor: null,
-              },
+          path === "/api/v1/users"
+            ? [{ userId: 9, userName: "member" }]
+            : path === "/api/v1/conversations/unread-summary"
+              ? []
+              : {
+                  items: [
+                    {
+                      MessageId: 1,
+                      ConversationId: 55,
+                      SenderId: 7,
+                      MessageText: "Tin nhắn của tôi",
+                      readReceipts: [],
+                    },
+                    {
+                      MessageId: 2,
+                      ConversationId: 55,
+                      SenderId: 9,
+                      MessageText: "Tin nhắn của bạn",
+                      readReceipts: [],
+                    },
+                  ],
+                  hasMore: false,
+                  nextCursor: null,
+                },
       },
     }),
   );
@@ -211,9 +212,7 @@ test("keeps sent and received messages on their respective sides", async () => {
     "justify-start",
   );
   await waitFor(() => {
-    expect(api.post).toHaveBeenCalledWith("/api/v1/conversations/direct", {
-      otherUserId: 9,
-    });
+    expect(api.put).toHaveBeenCalledWith("/api/v1/conversations/direct/9");
     expect(api.get).toHaveBeenCalledWith("/api/v1/conversations/55/messages", {
       params: undefined,
     });
@@ -261,7 +260,12 @@ test("loads older messages on upward scroll and preserves the visible anchor", a
       };
     });
   api.get.mockImplementation((path, options) => {
-    if (path === "/api/v1/conversations/unread") {
+    if (path === "/api/v1/users") {
+      return Promise.resolve({
+        data: { data: [{ userId: 9, userName: "member" }] },
+      });
+    }
+    if (path === "/api/v1/conversations/unread-summary") {
       return Promise.resolve({ data: { data: [] } });
     }
     const beforeMessageId = options?.params?.beforeMessageId;
@@ -306,16 +310,6 @@ test("loads older messages on upward scroll and preserves the visible anchor", a
 
 test("sends through the conversation API and keeps one composer focus ring", async () => {
   api.post.mockImplementation((path, payload) => {
-    if (path === "/api/v1/user/getAll") {
-      return Promise.resolve({
-        data: { data: [{ userId: 9, userName: "member" }] },
-      });
-    }
-    if (path === "/api/v1/conversations/direct") {
-      return Promise.resolve({
-        data: { data: { conversationId: 55 } },
-      });
-    }
     if (path === "/api/v1/conversations/55/messages") {
       return Promise.resolve({
         data: {
@@ -358,9 +352,11 @@ test("shows the unread count beside the matching contact", async () => {
     Promise.resolve({
       data: {
         data:
-          path === "/api/v1/conversations/unread"
-            ? [{ conversationId: 55, peerUserId: 9, unreadCount: 2 }]
-            : { items: [], hasMore: false, nextCursor: null },
+          path === "/api/v1/users"
+            ? [{ userId: 9, userName: "member" }]
+            : path === "/api/v1/conversations/unread-summary"
+              ? [{ conversationId: 55, peerUserId: 9, unreadCount: 2 }]
+              : { items: [], hasMore: false, nextCursor: null },
       },
     }),
   );
@@ -391,13 +387,16 @@ test("marks the highest visible message read once after a short debounce", async
   });
 
   await waitFor(() => {
-    expect(api.post).toHaveBeenCalledWith("/api/v1/conversations/55/read", {
-      upToMessageId: 2,
-    });
+    expect(api.put).toHaveBeenCalledWith(
+      "/api/v1/conversations/55/read-receipt",
+      {
+        upToMessageId: 2,
+      },
+    );
   });
   expect(
-    api.post.mock.calls.filter(
-      ([path]) => path === "/api/v1/conversations/55/read",
+    api.put.mock.calls.filter(
+      ([path]) => path === "/api/v1/conversations/55/read-receipt",
     ),
   ).toHaveLength(1);
 });
@@ -407,30 +406,32 @@ test("shows seen state from read receipts in the message page", async () => {
     Promise.resolve({
       data: {
         data:
-          path === "/api/v1/conversations/unread"
-            ? []
-            : {
-                items: [
-                  {
-                    MessageId: 1,
-                    ConversationId: 55,
-                    SenderId: 7,
-                    MessageText: "Tin nhắn của tôi",
-                    readReceipts: [
-                      { UserId: 9, readAt: "2026-01-02T03:04:05Z" },
-                    ],
-                  },
-                  {
-                    MessageId: 2,
-                    ConversationId: 55,
-                    SenderId: 9,
-                    MessageText: "Tin nhắn của bạn",
-                    readReceipts: [],
-                  },
-                ],
-                hasMore: false,
-                nextCursor: null,
-              },
+          path === "/api/v1/users"
+            ? [{ userId: 9, userName: "member" }]
+            : path === "/api/v1/conversations/unread-summary"
+              ? []
+              : {
+                  items: [
+                    {
+                      MessageId: 1,
+                      ConversationId: 55,
+                      SenderId: 7,
+                      MessageText: "Tin nhắn của tôi",
+                      readReceipts: [
+                        { UserId: 9, readAt: "2026-01-02T03:04:05Z" },
+                      ],
+                    },
+                    {
+                      MessageId: 2,
+                      ConversationId: 55,
+                      SenderId: 9,
+                      MessageText: "Tin nhắn của bạn",
+                      readReceipts: [],
+                    },
+                  ],
+                  hasMore: false,
+                  nextCursor: null,
+                },
       },
     }),
   );
@@ -448,30 +449,32 @@ test("groups dated messages and leaves legacy null timestamps without a clock", 
     Promise.resolve({
       data: {
         data:
-          path === "/api/v1/conversations/unread"
-            ? []
-            : {
-                items: [
-                  {
-                    MessageId: 1,
-                    ConversationId: 55,
-                    SenderId: 7,
-                    MessageText: "Tin nhắn có giờ",
-                    Timestamp: timestamp.toISOString(),
-                    readReceipts: [],
-                  },
-                  {
-                    MessageId: 2,
-                    ConversationId: 55,
-                    SenderId: 9,
-                    MessageText: "Tin nhắn cũ",
-                    Timestamp: null,
-                    readReceipts: [],
-                  },
-                ],
-                hasMore: false,
-                nextCursor: null,
-              },
+          path === "/api/v1/users"
+            ? [{ userId: 9, userName: "member" }]
+            : path === "/api/v1/conversations/unread-summary"
+              ? []
+              : {
+                  items: [
+                    {
+                      MessageId: 1,
+                      ConversationId: 55,
+                      SenderId: 7,
+                      MessageText: "Tin nhắn có giờ",
+                      Timestamp: timestamp.toISOString(),
+                      readReceipts: [],
+                    },
+                    {
+                      MessageId: 2,
+                      ConversationId: 55,
+                      SenderId: 9,
+                      MessageText: "Tin nhắn cũ",
+                      Timestamp: null,
+                      readReceipts: [],
+                    },
+                  ],
+                  hasMore: false,
+                  nextCursor: null,
+                },
       },
     }),
   );
