@@ -18,6 +18,7 @@ import { CiLogout } from "react-icons/ci";
 import { FaVideo } from "react-icons/fa6";
 import { IoCall } from "react-icons/io5";
 import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { logout } from "../store/actions/authAction";
 import { Modal, notification, Button, message } from "antd";
 const antdMessage = message; // trùng tên biến nên khai báo 1 biến khác để dùng
@@ -417,6 +418,11 @@ const Chat = () => {
             </div>
           )}
 
+          {user.role === "admin" && (
+            <Link className="admin-link" to="/admin">
+              Quản trị
+            </Link>
+          )}
           <div className="btn-logout" onClick={showConfirm}>
             <CiLogout />
             Logout
