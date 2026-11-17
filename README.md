@@ -10,6 +10,7 @@ A real-time chat application built with React.js, Node.js, and Socket.IO, featur
 - User list display with selectable users.
 - Persistent message storage.
 - User authentication and logout functionality.
+- Admin dashboard for user presence and audit events.
 - Call.
 - Call video.
 
@@ -44,6 +45,8 @@ Stop the containers with `docker compose down`. This keeps the database volume. 
 
 Access tokens expire after 15 minutes. Refresh tokens are rotated, stored only as SHA-256 hashes in the database, and sent to the browser as an `HttpOnly` cookie. Set `COOKIE_SECURE=true` when serving over HTTPS. New passwords are bcrypt-hashed, and the auth migration hashes existing plaintext passwords. The auth migration adds a unique username index, so resolve any duplicate usernames in an existing database before starting the new version.
 
+The server applies pending Sequelize migrations before starting. The admin migration adds user roles and audit-log storage, promotes the existing `nivz` account to admin, and gives new accounts the `user` role. It does not grant admin access to a newly registered account just because its username is `nivz`.
+
 ## Local Development
 
 The database can still be started with Docker while running the client and server directly. Put `DB_HOST=localhost`, `DB_PORT=1433`, `DB_USER=sa`, `DB_PASSWORD`, `DB_NAME=ChatDb`, and a random `JWT_ACCESS_SECRET` of at least 32 bytes in the root `.env` file. For local HTTP, use `COOKIE_SECURE=false`. Then run:
@@ -72,6 +75,12 @@ npm start
 ## API Responses
 
 Successful endpoints return `{ "success": true, "data": ..., "message": ... }`. Errors return `{ "success": false, "data": null, "error": { "code": "...", "message": "..." } }`. HTTP status codes remain meaningful; logout is a JSON `200` response, and unknown routes use the same error envelope.
+
+## Admin and Audit Logs
+
+The admin dashboard is available at `/admin` to authenticated users with the `admin` role. Admins can view all registered accounts with their current Socket.IO online/offline state, and browse audit events with pagination and event-type filtering. Admin API access is enforced by the server, not only by the client route.
+
+The audit log records registration, successful and failed login, logout, online/offline transitions, admin dashboard views, and message-send metadata. Message entries contain sender and recipient user IDs and event time only; message text is never stored in audit logs. Passwords, access/refresh tokens, cookies, IP addresses, and request bodies are not recorded. Audit entries are retained for 30 days and expired entries are removed at server startup and periodically while it is running.
 
 ## Usage
 

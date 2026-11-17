@@ -1,0 +1,108 @@
+import React from "react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import "@testing-library/jest-dom";
+import { configureStore } from "@reduxjs/toolkit";
+import { Provider } from "react-redux";
+import { MemoryRouter } from "react-router-dom";
+import api from "../../api/client";
+import rootReducer from "../store/reduces/rootReducer";
+import AdminDashboard from "./AdminDashboard";
+
+function installMatchMediaMock() {
+  Object.defineProperty(window, "matchMedia", {
+    writable: true,
+    value: (query) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener() {},
+      removeListener() {},
+      addEventListener() {},
+      removeEventListener() {},
+      dispatchEvent() {},
+    }),
+  });
+}
+
+jest.mock("../../api/client", () => ({
+  __esModule: true,
+  default: {
+    get: jest.fn(),
+  },
+}));
+
+function renderDashboard() {
+  installMatchMediaMock();
+  const store = configureStore({
+    reducer: rootReducer,
+    preloadedState: {
+      auth: {
+        isLoggedIn: true,
+        user: { userId: 7, userName: "nivz", role: "admin" },
+      },
+    },
+  });
+
+  return render(
+    <Provider store={store}>
+      <MemoryRouter>
+        <AdminDashboard />
+      </MemoryRouter>
+    </Provider>
+  );
+}
+
+beforeEach(() => {
+  api.get.mockImplementation((path) =>
+    Promise.resolve({
+      data: {
+        data:
+          path === "/api/v1/admin/users"
+            ? [
+                {
+                  userId: 9,
+                  userName: "member",
+                  role: "user",
+                  isOnline: true,
+                },
+              ]
+            : {
+                items: [
+                  {
+                    eventId: 1,
+                    eventType: "message.sent",
+                    actorUserId: 7,
+                    targetUserId: 9,
+                    occurredAt: "2026-01-30T12:00:00.000Z",
+                  },
+                ],
+                total: 1,
+              },
+      },
+    })
+  );
+});
+
+afterEach(() => {
+  jest.clearAllMocks();
+});
+
+test("admin can view users and metadata-only audit events", async () => {
+  renderDashboard();
+
+  expect(await screen.findByText("member")).toBeInTheDocument();
+  expect(screen.getByText("Đang online")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByText("Audit log"));
+
+  expect(await screen.findByText("Gửi tin nhắn (chỉ metadata)")).toBeInTheDocument();
+  await waitFor(() => {
+    expect(api.get).toHaveBeenCalledWith(
+      "/api/v1/admin/logs",
+      expect.objectContaining({
+        params: expect.objectContaining({ page: 1, pageSize: 25 }),
+      })
+    );
+  });
+  expect(screen.queryByText("private message text")).not.toBeInTheDocument();
+});

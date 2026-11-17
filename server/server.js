@@ -19,6 +19,8 @@ const initRouters = require("./routes");
 const errorHandler = require("./middleware/errorHandler");
 const { failure } = require("./utils/apiResponse");
 const authService = require("./services/authService");
+const auditLogService = require("./services/auditLogService");
+const presenceService = require("./services/presenceService");
 const db = require("./models");
 
 const app = express();
@@ -70,7 +72,7 @@ io.use(async (socket, next) => {
   try {
     const auth = authService.verifyAccessToken(token);
     const user = await db.Users.findByPk(auth.userId, {
-      attributes: ["userId", "userName"],
+      attributes: ["userId", "userName", "role"],
     });
     if (!user) {
       const error = new Error("Authentication required");
@@ -80,6 +82,7 @@ io.use(async (socket, next) => {
 
     socket.data.userId = user.userId;
     socket.data.userName = user.userName;
+    socket.data.role = user.role;
     socket.data.accessTokenExpiresAt = auth.expiresAt;
     return next();
   } catch (error) {
@@ -99,6 +102,16 @@ io.use(async (socket, next) => {
 io.on("connection", (socket) => {
   const { userId, userName, accessTokenExpiresAt } = socket.data;
   socket.join(userRoom(userId));
+  presenceService.connect(userId, socket.id);
+  auditLogService
+    .recordEvent({
+      eventType: auditLogService.EVENT_TYPES.PRESENCE_CONNECTED,
+      actorUserId: userId,
+      actorUserName: userName,
+    })
+    .catch((error) => {
+      console.error("Could not record user connection:", error);
+    });
 
   const remainingTokenLifetime =
     accessTokenExpiresAt * 1000 - Date.now();
@@ -106,7 +119,19 @@ io.on("connection", (socket) => {
     () => socket.disconnect(true),
     Math.max(remainingTokenLifetime, 0)
   );
-  socket.on("disconnect", () => clearTimeout(expiryTimer));
+  socket.on("disconnect", () => {
+    clearTimeout(expiryTimer);
+    presenceService.disconnect(userId, socket.id);
+    auditLogService
+      .recordEvent({
+        eventType: auditLogService.EVENT_TYPES.PRESENCE_DISCONNECTED,
+        actorUserId: userId,
+        actorUserName: userName,
+      })
+      .catch((error) => {
+        console.error("Could not record user disconnection:", error);
+      });
+  });
 
   socket.on("sendMessage", (payload = {}) => {
     const { receiverId, message } = payload || {};
@@ -187,6 +212,7 @@ io.on("connection", (socket) => {
 });
 
 const PORT = process.env.PORT || 5000;
+auditLogService.startRetentionCleanup();
 server.listen(PORT, () => {
   console.log(`Server is running at http://localhost:${PORT}`);
 });

@@ -10,6 +10,7 @@ import { useDispatch, useSelector } from "react-redux";
 import Login from "./component/auth/Login";
 import Register from "./component/auth/Register";
 import Chat from "./component/chat/Chat";
+import AdminDashboard from "./component/admin/AdminDashboard";
 import { login, logout } from "./component/store/actions/authAction";
 import { clearAccessToken, refreshAccessToken } from "./api/client";
 
@@ -17,6 +18,7 @@ function AppRoutes() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const isLoggedIn = useSelector((state) => state.auth.isLoggedIn);
+  const isAdmin = useSelector((state) => state.auth.user?.role === "admin");
   const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
@@ -63,6 +65,18 @@ function AppRoutes() {
         path="/chat"
         element={
           !authReady ? null : isLoggedIn ? <Chat /> : <Navigate to="/" replace />
+        }
+      />
+      <Route
+        path="/admin"
+        element={
+          !authReady ? null : isLoggedIn && isAdmin ? (
+            <AdminDashboard />
+          ) : isLoggedIn ? (
+            <Navigate to="/chat" replace />
+          ) : (
+            <Navigate to="/" replace />
+          )
         }
       />
       <Route path="*" element={<Navigate to="/" replace />} />

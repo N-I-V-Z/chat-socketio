@@ -3,6 +3,7 @@ const authService = require("../services/authService");
 const asyncHandler = require("../middleware/asyncHandler");
 const { success } = require("../utils/apiResponse");
 const httpError = require("../utils/httpError");
+const auditLogService = require("../services/auditLogService");
 
 function validateCredentials(userName, password, isRegistration) {
   if (
@@ -39,9 +40,20 @@ const login = asyncHandler(async (req, res) => {
   const user = await authService.authenticate(userName, password);
 
   if (!user) {
+    await auditLogService.recordEvent({
+      eventType: auditLogService.EVENT_TYPES.LOGIN_FAILED,
+      actorUserName: userName,
+      outcome: "failure",
+    });
     throw httpError(401, "INVALID_CREDENTIALS", "Invalid username or password");
   }
 
+  await auditLogService.recordEvent({
+    eventType: auditLogService.EVENT_TYPES.LOGIN_SUCCEEDED,
+    actorUserId: user.userId,
+    actorUserName: user.userName,
+    outcome: "success",
+  });
   const session = await authService.createRefreshSession(user.userId, res);
   success(res, session, 200, "Đăng nhập thành công");
 });
@@ -80,10 +92,15 @@ const refresh = asyncHandler(async (req, res) => {
 });
 
 const logout = asyncHandler(async (req, res) => {
-  await authService.revokeRefreshSession(
+  const userId = await authService.revokeRefreshSession(
     req.cookies?.[authService.REFRESH_COOKIE]
   );
   authService.clearRefreshCookie(res);
+  await auditLogService.recordEvent({
+    eventType: auditLogService.EVENT_TYPES.LOGOUT,
+    actorUserId: userId,
+    outcome: "success",
+  });
   success(res, null, 200, "Đăng xuất thành công");
 });
 

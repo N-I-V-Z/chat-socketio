@@ -167,8 +167,22 @@
 }
 .top-bar {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 12px;
   margin-bottom: 10px;
+}
+
+.admin-link {
+  margin-top: 20px;
+  color: #1d5f86;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.admin-link:hover {
+  color: #2980b9;
+  text-decoration: underline;
 }
 
 .video-call-btn {
