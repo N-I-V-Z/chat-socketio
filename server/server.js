@@ -21,6 +21,7 @@ const { failure } = require("./utils/apiResponse");
 const authService = require("./services/authService");
 const auditLogService = require("./services/auditLogService");
 const presenceService = require("./services/presenceService");
+const redisConnection = require("./services/redisConnection");
 const db = require("./models");
 
 const app = express();
@@ -213,6 +214,7 @@ io.on("connection", (socket) => {
 
 const PORT = process.env.PORT || 5000;
 auditLogService.startRetentionCleanup();
+redisConnection.connect();
 server.listen(PORT, () => {
   console.log(`Server is running at http://localhost:${PORT}`);
 });
