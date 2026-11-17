@@ -129,6 +129,15 @@ test("conversation migration backfills direct pairs before dropping receiver IDs
       sql.includes("WHERE [directPairKey] IS NOT NULL"),
     ),
   );
+  const receiverConstraintDrop = queryInterface.calls.queries.find(({ sql }) =>
+    sql.includes("[sys].[foreign_keys]"),
+  ).sql;
+  assert.match(receiverConstraintDrop, /QUOTENAME\(@foreignKeyName\)/);
+  assert.match(
+    receiverConstraintDrop,
+    /EXEC sys\.sp_executesql @dropForeignKeySql/,
+  );
+  assert.doesNotMatch(receiverConstraintDrop, /EXEC\(N'ALTER TABLE/);
   assert.equal(
     queryInterface.calls.queries.find(({ sql }) =>
       sql.includes("[unmappedCount]"),

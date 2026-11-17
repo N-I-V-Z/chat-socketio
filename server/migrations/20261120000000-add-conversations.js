@@ -192,6 +192,7 @@ module.exports = {
 
       await queryInterface.sequelize.query(
         `DECLARE @foreignKeyName sysname;
+        DECLARE @dropForeignKeySql nvarchar(max);
         SELECT @foreignKeyName = [fk].[name]
         FROM [sys].[foreign_keys] AS [fk]
         INNER JOIN [sys].[foreign_key_columns] AS [fkc]
@@ -202,7 +203,10 @@ module.exports = {
         WHERE [fk].[parent_object_id] = OBJECT_ID(N'[dbo].[Message]')
           AND [column].[name] = N'ReceiverId';
         IF @foreignKeyName IS NOT NULL
-          EXEC(N'ALTER TABLE [dbo].[Message] DROP CONSTRAINT ' + QUOTENAME(@foreignKeyName));`,
+        BEGIN
+          SET @dropForeignKeySql = N'ALTER TABLE [dbo].[Message] DROP CONSTRAINT ' + QUOTENAME(@foreignKeyName);
+          EXEC sys.sp_executesql @dropForeignKeySql;
+        END;`,
         { transaction },
       );
       await queryInterface.removeColumn("Message", "ReceiverId", {
