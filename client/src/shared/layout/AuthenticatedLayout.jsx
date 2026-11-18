@@ -50,8 +50,8 @@ function AuthenticatedLayout() {
 
   const desktopLinkClass = ({ isActive }) =>
     cn(
-      "grid size-11 place-items-center rounded-xl text-muted transition-colors hover:bg-surface-muted hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-      isActive && "bg-accent/10 text-accent",
+      "grid size-11 place-items-center rounded-xl text-white/65 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white",
+      isActive && "bg-white/15 text-white",
     );
   const mobileLinkClass = ({ isActive }) =>
     cn(
@@ -99,12 +99,12 @@ function AuthenticatedLayout() {
         </div>
       </header>
 
-      <aside className="hidden h-dvh min-h-0 flex-col items-center border-r border-line bg-surface py-4 lg:flex">
+      <aside className="hidden h-dvh min-h-0 flex-col items-center bg-ink py-5 lg:flex">
         <Link
           to="/chat"
           aria-label="Chat, trang tin nhắn"
           title="Chat"
-          className="grid size-11 shrink-0 place-items-center rounded-xl bg-accent text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          className="grid size-11 shrink-0 place-items-center rounded-xl bg-white text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
         >
           <IoChatbubblesOutline aria-hidden="true" className="size-6" />
         </Link>
@@ -130,7 +130,7 @@ function AuthenticatedLayout() {
           <span
             aria-label={`Đã đăng nhập với tên ${user?.userName || "người dùng"}`}
             title={user?.userName || "Tài khoản"}
-            className="grid size-10 place-items-center rounded-xl bg-surface-muted text-sm font-bold text-muted"
+            className="grid size-10 place-items-center rounded-full bg-white/10 text-sm font-bold text-white"
           >
             {userInitial}
           </span>
@@ -139,7 +139,7 @@ function AuthenticatedLayout() {
             aria-label="Đăng xuất"
             title="Đăng xuất"
             onClick={() => setLogoutDialogOpen(true)}
-            className="size-11 min-h-11 rounded-xl px-2"
+            className="size-11 min-h-11 rounded-xl px-2 text-white/65 hover:bg-white/10 hover:text-white focus-visible:ring-white"
           >
             <CiLogout aria-hidden="true" className="size-5" />
           </Button>

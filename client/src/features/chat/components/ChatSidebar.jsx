@@ -18,27 +18,31 @@ function ChatSidebar({
         isMobileConversationOpen ? "hidden lg:flex" : "flex",
       )}
     >
-      <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-5">
+      <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-6 lg:px-6 lg:py-7">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">
-            Tin nhắn
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-accent">
+            Không gian của bạn
           </p>
-          <h1 className="mt-1 text-xl font-bold tracking-tight">Trò chuyện</h1>
+          <h1 className="mt-2 text-2xl font-bold tracking-[-0.045em]">
+            Trò chuyện
+          </h1>
         </div>
-        <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-accent/10 text-sm font-bold text-accent">
+        <span className="grid size-11 shrink-0 place-items-center rounded-full bg-accent/10 text-sm font-bold text-accent ring-1 ring-accent/10">
           {user?.userName?.slice(0, 1)?.toLocaleUpperCase() || "?"}
         </span>
       </div>
 
-      <div className="flex items-center justify-between px-5 pb-2 pt-4">
-        <h2 className="text-sm font-bold">Người dùng</h2>
+      <div className="flex items-center justify-between px-5 pb-3 pt-6 lg:px-6">
+        <h2 className="text-sm font-bold tracking-[-0.02em]">Liên hệ</h2>
         {!userListQuery.isPending && (
-          <span className="text-xs text-muted">{userList.length}</span>
+          <span className="rounded-full bg-surface-muted px-2.5 py-1 text-xs font-semibold tabular-nums text-muted">
+            {userList.length}
+          </span>
         )}
       </div>
       <ul
         aria-label="Danh sách người dùng"
-        className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 pb-3"
+        className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-3 pb-5 lg:px-4"
       >
         {userListQuery.isPending && (
           <li className="space-y-2 px-2 py-3" role="status">
@@ -70,15 +74,17 @@ function ChatSidebar({
                 aria-current={isSelected ? "true" : undefined}
                 onClick={() => onSelectUser(listedUser.userId)}
                 className={[
-                  "flex min-h-12 w-full items-center gap-3 rounded-xl px-3 py-2 text-left",
+                  "flex min-h-16 w-full items-center gap-3 rounded-xl px-3 py-2 text-left",
                   "transition duration-200 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                  isSelected ? "bg-accent/10 text-accent" : "text-ink",
+                  isSelected
+                    ? "bg-accent/10 text-accent ring-1 ring-accent/10"
+                    : "text-ink",
                 ].join(" ")}
               >
                 <span
                   aria-hidden="true"
                   className={[
-                    "grid size-9 shrink-0 place-items-center rounded-xl text-sm font-bold",
+                    "grid size-10 shrink-0 place-items-center rounded-full text-sm font-bold",
                     isSelected
                       ? "bg-accent text-accent-foreground"
                       : "bg-surface-muted text-muted",

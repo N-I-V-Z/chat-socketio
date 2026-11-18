@@ -375,6 +375,23 @@ test("keeps a draft with its recipient when switching conversations", async () =
   );
 });
 
+test("shows realtime connection state and gates call actions", async () => {
+  renderChat();
+  fireEvent.click(await screen.findByRole("button", { name: "member" }));
+  const callButton = screen.getByRole("button", {
+    name: "Gọi thoại cho member",
+  });
+  expect(screen.getByText("Đang kết nối lại")).toBeInTheDocument();
+  expect(callButton).toBeDisabled();
+
+  const onConnect = mockSocket.on.mock.calls.find(
+    ([event]) => event === "connect",
+  )[1];
+  act(() => onConnect());
+  expect(screen.getByText("Đã kết nối")).toBeInTheDocument();
+  expect(callButton).toBeEnabled();
+});
+
 test("restores a failed message to the original recipient", async () => {
   api.post.mockRejectedValue(new Error("network failure"));
   renderChat();

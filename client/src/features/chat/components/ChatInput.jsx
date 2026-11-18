@@ -10,7 +10,7 @@ function ChatInput({
 }) {
   return (
     <form
-      className="border-t border-line p-3 sm:px-6 sm:py-4"
+      className="border-t border-line bg-surface p-3 sm:px-6 sm:py-4 xl:px-8"
       onSubmit={(event) => {
         event.preventDefault();
         onSend();
@@ -19,7 +19,7 @@ function ChatInput({
       <label className="sr-only" htmlFor="chat-message">
         Tin nhắn mới
       </label>
-      <div className="flex items-end gap-2 rounded-2xl border border-line bg-canvas p-2 focus-within:ring-2 focus-within:ring-accent">
+      <div className="flex items-end gap-2 rounded-xl border border-line bg-canvas p-2 transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/20">
         <textarea
           id="chat-message"
           rows={1}

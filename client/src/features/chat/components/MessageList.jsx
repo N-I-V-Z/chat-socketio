@@ -17,7 +17,7 @@ function MessageList({
     <div
       ref={messageListRef}
       onScroll={onScroll}
-      className="flex-1 space-y-3 overflow-y-auto px-4 py-5 sm:px-7 sm:py-7"
+      className="flex-1 space-y-3 overflow-y-auto bg-canvas/65 px-4 py-5 sm:px-7 sm:py-7 xl:px-10"
       role="log"
       aria-label={`Tin nhắn với ${selectedUserName}`}
       aria-live="polite"
@@ -89,10 +89,10 @@ function MessageList({
                 data-message-id={msg.MessageId}
                 className={`flex ${isSent ? "justify-end" : "justify-start"}`}
               >
-                <div className="flex max-w-[85%] flex-col sm:max-w-[70%]">
+                <div className="flex max-w-[85%] flex-col sm:max-w-[68%]">
                   <p
                     className={[
-                      "whitespace-pre-wrap break-words rounded-2xl px-4 py-3 text-sm leading-6",
+                      "whitespace-pre-wrap break-words rounded-2xl px-4 py-2.5 text-sm leading-6 shadow-sm",
                       isSent
                         ? "rounded-br-md bg-accent text-accent-foreground"
                         : "rounded-bl-md bg-surface-muted text-ink",

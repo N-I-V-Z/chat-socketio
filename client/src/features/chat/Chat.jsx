@@ -68,6 +68,7 @@ const Chat = () => {
   const [calling, setCalling] = useState(false);
   const [callHasVideo, setCallHasVideo] = useState(false);
   const [incomingCall, setIncomingCall] = useState(null);
+  const [isSocketConnected, setIsSocketConnected] = useState(false);
   const { user } = useSelector((state) => state.auth);
   const currentUserId = Number(user?.userId);
   const hasValidUserId =
@@ -328,6 +329,7 @@ const Chat = () => {
 
   useEffect(() => {
     const handleConnect = () => {
+      setIsSocketConnected(true);
       queryClient.invalidateQueries({
         queryKey: queryKeys.unreadSummary(currentUserId),
       });
@@ -347,11 +349,13 @@ const Chat = () => {
       }
     };
     const handleConnectError = (error) => {
+      setIsSocketConnected(false);
       if (error.data?.code === "ACCESS_TOKEN_EXPIRED") {
         handleExpiredConnection();
       }
     };
     const handleDisconnect = (reason) => {
+      setIsSocketConnected(false);
       if (reason === "io server disconnect") {
         handleExpiredConnection();
       }
@@ -580,6 +584,10 @@ const Chat = () => {
   };
 
   const requestCall = (video) => {
+    if (!socket.connected) {
+      toast("Đang kết nối lại. Vui lòng thử gọi sau.", "info");
+      return;
+    }
     clearTimeout(ringTimerRef.current);
     ringTimerRef.current = setTimeout(() => {
       if (callIdRef.current)
@@ -653,7 +661,7 @@ const Chat = () => {
 
   return (
     <main className="h-full min-h-0 bg-canvas text-ink">
-      <div className="mx-auto grid h-full min-h-0 max-w-[1600px] grid-cols-1 grid-rows-1 gap-0 lg:grid-cols-[19rem_minmax(0,1fr)] lg:gap-4 lg:p-5">
+      <div className="mx-auto grid h-full min-h-0 max-w-[1600px] grid-cols-1 grid-rows-1 gap-0 lg:grid-cols-[21rem_minmax(0,1fr)] lg:gap-5 lg:p-5 xl:p-7">
         <ChatSidebar
           isMobileConversationOpen={isMobileConversationOpen}
           onSelectUser={(userId) => {
@@ -674,6 +682,7 @@ const Chat = () => {
           hasValidConversationId={hasValidConversationId}
           hasValidReceiver={hasValidReceiver}
           isMobileConversationOpen={isMobileConversationOpen}
+          isSocketConnected={isSocketConnected}
           latestSeenMessageId={latestSeenMessageId}
           loadOlderMessages={loadOlderMessages}
           message={message}
