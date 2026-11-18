@@ -41,39 +41,69 @@ jobs:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
           DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
-          MSSQL_SA_PASSWORD: ${{ secrets.MSSQL_SA_PASSWORD }}
-          JWT_ACCESS_SECRET: ${{ secrets.JWT_ACCESS_SECRET }}
-          COOKIE_SECURE: ${{ secrets.COOKIE_SECURE }}
-          REACT_APP_API_ROOT: ${{ secrets.REACT_APP_API_ROOT }}
-          CLIENT_URL: ${{ secrets.CLIENT_URL }}
+
         run: |
+          set -euo pipefail
+
+          # Kiểm tra Docker credentials
+          : "${DOCKER_USERNAME:?Missing DOCKER_USERNAME}"
+          : "${DOCKER_PASSWORD:?Missing DOCKER_PASSWORD}"
+
+          # Tạo file credentials tạm
+          umask 077
+          printf '%s\n%s\n' "$DOCKER_USERNAME" "$DOCKER_PASSWORD" > .docker-auth
+
+          # Upload credentials lên VPS
+          scp -P "$VPS_PORT" \
+            -o StrictHostKeyChecking=no \
+            .docker-auth \
+            "$VPS_USERNAME@$VPS_HOST:~/"
+
+          # Tạo deploy script
           cat << 'EOF' > deploy_script.sh
+          set -euo pipefail
+
           # Đăng nhập Docker Hub trên VPS
-          echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+          cd ~/apps/chat-app
 
-          # Đi đúng vào thư mục dự án trên VPS của bạn
-          cd ~/apps/chat-app || exit 1
+          AUTH_FILE="$HOME/.docker-auth"
+          trap 'rm -f "$AUTH_FILE"' EXIT
 
-          # TỰ ĐỘNG TẠO FILE .ENV TRÊN VPS TỪ CÁC BIẾN GITHUB SECRETS
-          cat << EOT > .env
-          MSSQL_SA_PASSWORD=$MSSQL_SA_PASSWORD
-          JWT_ACCESS_SECRET=$JWT_ACCESS_SECRET
-          COOKIE_SECURE=$COOKIE_SECURE
-          REACT_APP_API_ROOT=$REACT_APP_API_ROOT
-          CLIENT_URL=$CLIENT_URL
-          EOT
+          IFS= read -r DOCKER_USERNAME < "$AUTH_FILE"
+          IFS= read -r DOCKER_PASSWORD < <(sed -n '2p' "$AUTH_FILE")
 
-          # Kéo image mới và deploy qua docker compose
+          echo "$DOCKER_PASSWORD" | docker login \
+            -u "$DOCKER_USERNAME" \
+            --password-stdin
+
+          unset DOCKER_PASSWORD
+
+          echo "Docker login successful!"
+
+          # Pull image mới
+          echo "Pulling latest images..."
           docker compose pull
+
+          # Deploy
+          echo "Deploying containers..."
           docker compose up -d --force-recreate
 
-          # Dọn dẹp rác image cũ
+          # Kiểm tra container
+          docker compose ps
+
+          # Dọn image cũ sau khi deploy thành công
           docker image prune -f
+
+          echo "Deployment completed!"
           EOF
 
-          # Thực thi SSH đúng chuẩn port 2222 và user token của VPS
-          ssh -o StrictHostKeyChecking=no \
-              -o PubkeyAuthentication=no \
-              -o PasswordAuthentication=no \
-              -p $VPS_PORT \
-              $VPS_USERNAME@$VPS_HOST 'bash -s' < deploy_script.sh
+          # Thực thi SSH
+          ssh -p "$VPS_PORT" \
+            -o StrictHostKeyChecking=no \
+            -o PubkeyAuthentication=no \
+            -o PasswordAuthentication=no \
+            "$VPS_USERNAME@$VPS_HOST" \
+            'bash -s' < deploy_script.sh
+
+          # Xóa credentials tạm trên GitHub Runner
+          rm -f .docker-auth deploy_script.sh
