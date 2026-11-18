@@ -2,6 +2,7 @@ import { cn } from "../../../shared/ui/cn";
 
 function ChatSidebar({
   isMobileConversationOpen,
+  isSocketConnected,
   onSelectUser,
   unreadCountByPeer,
   unreadSummaryQuery,
@@ -65,6 +66,12 @@ function ChatSidebar({
         )}
         {userList.map((listedUser) => {
           const isSelected = Number(listedUser.userId) === selectedUserId;
+          const isOnline = isSocketConnected && listedUser.isOnline === true;
+          const presenceLabel = !isSocketConnected
+            ? "Trạng thái chưa khả dụng"
+            : isOnline
+              ? "Đang hoạt động"
+              : "Không hoạt động";
           const unreadCount =
             unreadCountByPeer.get(Number(listedUser.userId)) || 0;
           return (
@@ -72,6 +79,7 @@ function ChatSidebar({
               <button
                 type="button"
                 aria-current={isSelected ? "true" : undefined}
+                aria-describedby={`contact-presence-${listedUser.userId}`}
                 onClick={() => onSelectUser(listedUser.userId)}
                 className={[
                   "flex min-h-16 w-full items-center gap-3 rounded-xl px-3 py-2 text-left",
@@ -84,13 +92,19 @@ function ChatSidebar({
                 <span
                   aria-hidden="true"
                   className={[
-                    "grid size-10 shrink-0 place-items-center rounded-full text-sm font-bold",
+                    "relative grid size-10 shrink-0 place-items-center rounded-full text-sm font-bold",
                     isSelected
                       ? "bg-accent text-accent-foreground"
                       : "bg-surface-muted text-muted",
                   ].join(" ")}
                 >
                   {listedUser.userName?.slice(0, 1)?.toLocaleUpperCase() || "?"}
+                  <span
+                    className={cn(
+                      "absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-surface",
+                      isOnline ? "bg-success" : "bg-muted/65",
+                    )}
+                  />
                 </span>
                 <span className="truncate text-sm font-semibold">
                   {listedUser.userName}
@@ -104,6 +118,12 @@ function ChatSidebar({
                   </span>
                 )}
               </button>
+              <span
+                id={`contact-presence-${listedUser.userId}`}
+                className="sr-only"
+              >
+                {presenceLabel}
+              </span>
             </li>
           );
         })}

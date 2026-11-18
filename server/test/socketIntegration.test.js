@@ -14,6 +14,22 @@ const audit = require("../services/auditLogService");
 const calls = require("../services/callSessionService");
 const rateLimiter = require("../services/rateLimiter");
 
+function waitForPresence(socket, userId, isOnline) {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      socket.off("presenceChanged", handlePresence);
+      reject(new Error("Timed out waiting for presence update"));
+    }, 2000);
+    const handlePresence = (event) => {
+      if (event.userId !== userId || event.isOnline !== isOnline) return;
+      clearTimeout(timeout);
+      socket.off("presenceChanged", handlePresence);
+      resolve(event);
+    };
+    socket.on("presenceChanged", handlePresence);
+  });
+}
+
 test("real Socket.IO handshake rejects inactive users and signaling validates call access", async () => {
   const priorSecret = process.env.JWT_ACCESS_SECRET;
   process.env.JWT_ACCESS_SECRET =
@@ -63,6 +79,13 @@ test("real Socket.IO handshake rejects inactive users and signaling validates ca
     };
     const active = open(1);
     await once(active, "connect");
+    const onlineEvent = waitForPresence(active, 2, true);
+    const watcher = open(2);
+    await once(watcher, "connect");
+    assert.deepEqual(await onlineEvent, { userId: 2, isOnline: true });
+    const offlineEvent = waitForPresence(active, 2, false);
+    watcher.disconnect();
+    assert.deepEqual(await offlineEvent, { userId: 2, isOnline: false });
     const inactive = open(3);
     const [failure] = await once(inactive, "connect_error");
     assert.equal(failure.data.code, "INVALID_ACCESS_TOKEN");

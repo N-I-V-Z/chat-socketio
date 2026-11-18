@@ -86,13 +86,14 @@ Kafka events contain identifiers rather than message bodies. Consumers load the 
 
 The authenticated conversation API exposes unread counts per peer and accepts a `upToMessageId` cursor to mark messages read. The cursor must belong to the conversation, and receipt writes are idempotent. Existing messages are backfilled as read for current participants during migration because their historical read state is unknown. The chat marks a cursor after its message becomes sufficiently visible, displays unread badges beside contacts, and shows “Đã xem” for the latest outgoing message the other participant has read. Group-chat UI is not included.
 
-- `GET /api/v1/users` lists users available to the authenticated user; `GET /api/v1/users/me` returns the current user.
+- `GET /api/v1/users` lists users available to the authenticated user with a current `isOnline` flag; `GET /api/v1/users/me` returns the current user.
 - `GET /api/v1/messages?receiverId={userId}` lists direct messages; `POST /api/v1/messages` creates one.
 - `PUT /api/v1/conversations/direct/:otherUserId` gets or creates the current user's direct conversation.
 - `GET /api/v1/conversations/unread-summary` returns the authenticated user's unread counts.
 - `GET` and `POST /api/v1/conversations/:conversationId/messages` list and create conversation messages.
 - `PUT /api/v1/conversations/:conversationId/read-receipt` accepts `{ "upToMessageId": 123 }`.
 - Socket.IO emits `conversationRead` to the other conversation participants after a read update.
+- Socket.IO emits `presenceChanged` with `{ userId, isOnline }` when a user gains their first connection or loses their last one. The chat refreshes presence after reconnecting.
 
 Admin accounts can set `isActive` with `PATCH /api/v1/admin/users/:userId/status` and `{ "isActive": false }`; inactive accounts cannot log in, refresh, use authenticated APIs, or connect via Socket.IO. Calls carry a server-issued `callId` on every signaling event, and the server authorizes both participants against the Redis call session.
 

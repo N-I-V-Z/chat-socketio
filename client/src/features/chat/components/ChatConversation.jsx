@@ -48,13 +48,33 @@ function ChatConversation({
           >
             <IoArrowBack aria-hidden="true" className="size-5" />
           </Button>
+          {selectedUser && (
+            <span
+              aria-hidden="true"
+              className="relative grid size-10 shrink-0 place-items-center rounded-full bg-accent/10 text-sm font-bold text-accent"
+            >
+              {selectedUser.userName?.slice(0, 1)?.toLocaleUpperCase() || "?"}
+              <span
+                className={cn(
+                  "absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-surface",
+                  isSocketConnected && selectedUser.isOnline === true
+                    ? "bg-success"
+                    : "bg-muted/65",
+                )}
+              />
+            </span>
+          )}
           <div className="min-w-0">
             <p className="truncate text-base font-bold tracking-[-0.025em] sm:text-lg">
               {selectedUserName}
             </p>
             <p className="mt-0.5 truncate text-xs text-muted">
               {selectedUser
-                ? "Cuộc trò chuyện riêng tư"
+                ? !isSocketConnected
+                  ? "Trạng thái chưa khả dụng"
+                  : selectedUser.isOnline
+                    ? "Đang hoạt động"
+                    : "Không hoạt động"
                 : "Chọn một người để bắt đầu"}
             </p>
           </div>

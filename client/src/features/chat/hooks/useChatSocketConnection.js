@@ -25,6 +25,9 @@ function useChatSocketConnection({
       queryClient.invalidateQueries({
         queryKey: queryKeys.unreadSummary(currentUserId),
       });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.chatUsers(currentUserId),
+      });
     };
     const handleExpiredConnection = async () => {
       try {

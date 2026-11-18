@@ -14,6 +14,7 @@ The client is a Vietnamese, light-theme messaging product. Its visual direction 
 
 - Auth: one clear form, one restrained brand panel on wide screens. The form remains the first and most important content on narrow screens.
 - Chat: contacts and the selected conversation form the main hierarchy. Make the current peer, sending state, read state, connection state, and call state easy to distinguish. Long text must wrap without horizontal scrolling.
+- Presence: a small green dot at the lower right of a contact avatar means online; gray means offline or the viewer's realtime connection is unavailable. Pair the dot with text so color is not the only signal.
 - Video calls: the remote camera owns the main stage. Keep the local preview in a small corner inset; tapping it expands the local camera, and tapping again restores the remote view. Preserve both video elements while switching so their streams stay attached.
 - Admin: users and audit events share typography, status styles, empty states, and responsive presentation. Mobile and desktop expose the same information.
 

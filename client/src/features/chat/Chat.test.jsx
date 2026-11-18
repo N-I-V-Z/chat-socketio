@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { configureStore } from "@reduxjs/toolkit";
@@ -397,6 +398,47 @@ test("shows realtime connection state and gates call actions", async () => {
   act(() => onConnect());
   expect(screen.getByText("Đã kết nối")).toBeInTheDocument();
   expect(callButton).toBeEnabled();
+});
+
+test("shows contact presence and updates it from realtime events", async () => {
+  const originalGet = api.get.getMockImplementation();
+  let memberOnline = true;
+  api.get.mockImplementation((path, options) =>
+    path === "/api/v1/users"
+      ? Promise.resolve({
+          data: {
+            data: [
+              { userId: 9, userName: "member", isOnline: memberOnline },
+              { userId: 10, userName: "second", isOnline: false },
+            ],
+          },
+        })
+      : originalGet(path, options),
+  );
+
+  renderChat();
+  const member = await screen.findByRole("button", { name: "member" });
+  const second = screen.getByRole("button", { name: "second" });
+  const memberDot = member.querySelector(".absolute.rounded-full");
+  const secondDot = second.querySelector(".absolute.rounded-full");
+  const onConnect = mockSocket.on.mock.calls.find(
+    ([event]) => event === "connect",
+  )[1];
+  act(() => onConnect());
+  await waitFor(() => expect(memberDot).toHaveClass("bg-success"));
+  expect(secondDot).toHaveClass("bg-muted/65");
+
+  fireEvent.click(member);
+  const conversation = screen.getByRole("region", { name: "Cuộc trò chuyện" });
+  expect(within(conversation).getByText("Đang hoạt động")).toBeInTheDocument();
+
+  memberOnline = false;
+  const onPresenceChanged = mockSocket.on.mock.calls.find(
+    ([event]) => event === "presenceChanged",
+  )[1];
+  act(() => onPresenceChanged({ userId: 9, isOnline: false }));
+  await waitFor(() => expect(memberDot).toHaveClass("bg-muted/65"));
+  expect(within(conversation).getByText("Không hoạt động")).toBeInTheDocument();
 });
 
 test("clears cached private data when socket refresh is rejected", async () => {

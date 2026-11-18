@@ -592,6 +592,7 @@ const Chat = () => {
       <div className="mx-auto grid h-full min-h-0 max-w-[1600px] grid-cols-1 grid-rows-1 gap-0 lg:grid-cols-[21rem_minmax(0,1fr)] lg:gap-5 lg:p-5 xl:p-7">
         <ChatSidebar
           isMobileConversationOpen={isMobileConversationOpen}
+          isSocketConnected={isSocketConnected}
           onSelectUser={(userId) => {
             setReceiverId(userId);
             setIsMobileConversationOpen(true);

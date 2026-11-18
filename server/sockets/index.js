@@ -58,12 +58,17 @@ function registerSockets(
     const connectPromise = presenceService
       .connect(userId, socket.id)
       .then((becameOnline) => {
-        if (becameOnline)
+        if (becameOnline) {
           recordPresence(
             auditLogService.EVENT_TYPES.PRESENCE_CONNECTED,
             userId,
             userName,
           );
+          io.emit("presenceChanged", {
+            userId: Number(userId),
+            isOnline: true,
+          });
+        }
       })
       .catch((error) =>
         logger.error({ err: error }, "Presence connect failed"),
@@ -108,12 +113,17 @@ function registerSockets(
       void connectPromise
         .then(() => presenceService.disconnect(userId, socket.id))
         .then((becameOffline) => {
-          if (becameOffline)
+          if (becameOffline) {
             recordPresence(
               auditLogService.EVENT_TYPES.PRESENCE_DISCONNECTED,
               userId,
               userName,
             );
+            io.emit("presenceChanged", {
+              userId: Number(userId),
+              isOnline: false,
+            });
+          }
         })
         .catch((error) =>
           logger.error({ err: error }, "Presence disconnect failed"),
