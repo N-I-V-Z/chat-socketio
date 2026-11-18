@@ -1,4 +1,4 @@
-import React, {
+import {
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -27,24 +27,17 @@ import {
   appendConversationMessage,
   appendSocketMessage,
   applyConversationRead,
-} from "./chatQueryCache";
-import {
-  formatMessageTime,
-  groupMessagesByDay,
-  toValidDate,
-} from "./messageDateFormat";
-import Button from "../ui/Button";
-import Dialog from "../ui/Dialog";
+} from "./utils/chatQueryCache";
+import { groupMessagesByDay } from "./utils/messageDateFormat";
+import ChatConversation from "./components/ChatConversation";
+import ChatSidebar from "./components/ChatSidebar";
+import CallDialogs from "./components/CallDialogs";
+import useReadReceipts from "./hooks/useReadReceipts";
 import { useToast } from "../ui/ToastProvider";
-import { FaVideo } from "react-icons/fa6";
-import { IoArrowBack, IoCall } from "react-icons/io5";
-import { cn } from "../ui/cn";
 
 const EMPTY_MESSAGES = [];
 const SCROLL_EDGE_PX = 72;
 const BOTTOM_THRESHOLD_PX = 96;
-const READ_RECEIPT_DEBOUNCE_MS = 200;
-const READ_INTERSECTION_THRESHOLD = 0.6;
 
 const Chat = () => {
   const navigate = useNavigate();
@@ -84,10 +77,6 @@ const Chat = () => {
   const initialScrollConversationRef = useRef(null);
   const initialScrollCompletedRef = useRef(false);
   const olderFetchInFlightRef = useRef(false);
-  const pendingReadMessageIdRef = useRef(0);
-  const requestedReadMessageIdRef = useRef(0);
-  const acknowledgedReadMessageIdRef = useRef(0);
-  const readReceiptTimerRef = useRef(null);
   const iceCandidateQueueRef = useRef([]);
 
   // Dùng ref để lưu trữ các giá trị thay đổi liên tục nhằm tránh đưa vào dependency array của socket useEffect
@@ -320,177 +309,14 @@ const Chat = () => {
     }
   }, [conversationId, hasValidConversationId, messagesQuery.data]);
 
-  useEffect(() => {
-    pendingReadMessageIdRef.current = 0;
-    requestedReadMessageIdRef.current = 0;
-    acknowledgedReadMessageIdRef.current = 0;
-    if (readReceiptTimerRef.current) {
-      clearTimeout(readReceiptTimerRef.current);
-      readReceiptTimerRef.current = null;
-    }
-
-    return () => {
-      if (readReceiptTimerRef.current) {
-        clearTimeout(readReceiptTimerRef.current);
-        readReceiptTimerRef.current = null;
-      }
-    };
-  }, [conversationId]);
-
-  const markReadMutation = useMutation({
-    mutationFn: async ({ targetConversationId, upToMessageId }) => {
-      const response = await api.put(
-        `/api/v1/conversations/${targetConversationId}/read-receipt`,
-        { upToMessageId },
-      );
-      return response.data.data;
-    },
-    retry: 1,
-    onSuccess: (readState, variables) => {
-      acknowledgedReadMessageIdRef.current = Math.max(
-        acknowledgedReadMessageIdRef.current,
-        Number(readState.upToMessageId),
-      );
-      applyConversationRead(
-        queryClient,
-        variables.targetConversationId,
-        currentUserId,
-        readState.upToMessageId,
-        readState.readAt,
-      );
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.unreadSummary(currentUserId),
-      });
-    },
-    onError: (_error, variables) => {
-      requestedReadMessageIdRef.current = acknowledgedReadMessageIdRef.current;
-      pendingReadMessageIdRef.current = Math.max(
-        pendingReadMessageIdRef.current,
-        variables.upToMessageId,
-      );
-      toast("Không thể cập nhật trạng thái đã đọc.", "error");
-    },
+  useReadReceipts({
+    conversationId,
+    currentUserId,
+    hasValidConversationId,
+    messageListRef,
+    queryClient,
+    toast,
   });
-
-  const queueReadReceipt = useCallback(
-    (messageId) => {
-      const parsedMessageId = Number(messageId);
-      if (
-        !hasValidConversationId ||
-        !Number.isSafeInteger(parsedMessageId) ||
-        parsedMessageId < 1 ||
-        parsedMessageId <=
-          Math.max(
-            requestedReadMessageIdRef.current,
-            pendingReadMessageIdRef.current,
-          )
-      ) {
-        return;
-      }
-
-      pendingReadMessageIdRef.current = parsedMessageId;
-      if (readReceiptTimerRef.current) return;
-
-      readReceiptTimerRef.current = setTimeout(() => {
-        readReceiptTimerRef.current = null;
-        const upToMessageId = pendingReadMessageIdRef.current;
-        pendingReadMessageIdRef.current = 0;
-        if (upToMessageId <= requestedReadMessageIdRef.current) return;
-
-        requestedReadMessageIdRef.current = upToMessageId;
-        markReadMutation.mutate({
-          targetConversationId: conversationId,
-          upToMessageId,
-        });
-      }, READ_RECEIPT_DEBOUNCE_MS);
-    },
-    [conversationId, hasValidConversationId, markReadMutation.mutate],
-  );
-
-  // Cố định vòng đời IntersectionObserver kết hợp MutationObserver để tự động bắt tin nhắn mới thêm/optimistic updates
-  useEffect(() => {
-    const container = messageListRef.current;
-    if (!container) return undefined;
-
-    const markVisibleMessages = (messageElements) => {
-      const containerBounds = container.getBoundingClientRect();
-      let highestVisibleMessageId = 0;
-      messageElements.forEach((element) => {
-        const bounds = element.getBoundingClientRect();
-        const visibleHeight =
-          Math.min(bounds.bottom, containerBounds.bottom) -
-          Math.max(bounds.top, containerBounds.top);
-        if (
-          visibleHeight > 0 &&
-          visibleHeight / Math.max(bounds.height, 1) >=
-            READ_INTERSECTION_THRESHOLD
-        ) {
-          highestVisibleMessageId = Math.max(
-            highestVisibleMessageId,
-            Number(element.dataset.messageId) || 0,
-          );
-        }
-      });
-      if (highestVisibleMessageId > 0) {
-        queueReadReceipt(highestVisibleMessageId);
-      }
-    };
-
-    if (typeof IntersectionObserver === "undefined") {
-      const handleScroll = () => {
-        const messageElements = container.querySelectorAll(
-          "[data-chat-message][data-message-id]",
-        );
-        markVisibleMessages(messageElements);
-      };
-      handleScroll();
-      container.addEventListener("scroll", handleScroll);
-      return () => container.removeEventListener("scroll", handleScroll);
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const highestVisibleMessageId = entries.reduce(
-          (highestId, entry) =>
-            entry.isIntersecting &&
-            entry.intersectionRatio >= READ_INTERSECTION_THRESHOLD
-              ? Math.max(highestId, Number(entry.target.dataset.messageId) || 0)
-              : highestId,
-          0,
-        );
-        if (highestVisibleMessageId > 0) {
-          queueReadReceipt(highestVisibleMessageId);
-        }
-      },
-      {
-        root: container,
-        threshold: [0, READ_INTERSECTION_THRESHOLD],
-      },
-    );
-
-    const observeElements = () => {
-      const messageElements = container.querySelectorAll(
-        "[data-chat-message][data-message-id]",
-      );
-      messageElements.forEach((element) => observer.observe(element));
-    };
-
-    observeElements();
-
-    const mutationObserver = new MutationObserver(() => {
-      observeElements();
-    });
-
-    mutationObserver.observe(container, {
-      childList: true,
-      subtree: true,
-    });
-
-    return () => {
-      mutationObserver.disconnect();
-      observer.disconnect();
-    };
-  }, [conversationId, queueReadReceipt]);
 
   const sendMessageMutation = useMutation({
     mutationFn: async ({ conversationId: targetId, message: text }) => {
@@ -874,475 +700,59 @@ const Chat = () => {
   return (
     <main className="h-full min-h-0 bg-canvas text-ink">
       <div className="mx-auto grid h-full min-h-0 max-w-[1600px] grid-cols-1 grid-rows-1 gap-0 lg:grid-cols-[19rem_minmax(0,1fr)] lg:gap-4 lg:p-5">
-        <aside
-          aria-label="Danh sách liên hệ"
-          className={cn(
-            "min-h-0 flex-col overflow-hidden border-line bg-surface lg:rounded-panel lg:border lg:shadow-panel",
-            isMobileConversationOpen ? "hidden lg:flex" : "flex",
-          )}
-        >
-          <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-5">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">
-                Tin nhắn
-              </p>
-              <h1 className="mt-1 text-xl font-bold tracking-tight">
-                Trò chuyện
-              </h1>
-            </div>
-            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-accent/10 text-sm font-bold text-accent">
-              {user?.userName?.slice(0, 1)?.toLocaleUpperCase() || "?"}
-            </span>
-          </div>
+        <ChatSidebar
+          isMobileConversationOpen={isMobileConversationOpen}
+          onSelectUser={(userId) => {
+            setReceiverId(userId);
+            setIsMobileConversationOpen(true);
+          }}
+          unreadCountByPeer={unreadCountByPeer}
+          unreadSummaryQuery={unreadSummaryQuery}
+          user={user}
+          userList={userList}
+          userListQuery={userListQuery}
+          selectedUserId={normalizedReceiverId}
+        />
 
-          <div className="flex items-center justify-between px-5 pb-2 pt-4">
-            <h2 className="text-sm font-bold">Người dùng</h2>
-            {!userListQuery.isPending && (
-              <span className="text-xs text-muted">{userList.length}</span>
-            )}
-          </div>
-          <ul
-            aria-label="Danh sách người dùng"
-            className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 pb-3"
-          >
-            {userListQuery.isPending && (
-              <li className="space-y-2 px-2 py-3" role="status">
-                <span className="block h-11 animate-pulse rounded-xl bg-surface-muted motion-reduce:animate-none" />
-                <span className="block h-11 animate-pulse rounded-xl bg-surface-muted motion-reduce:animate-none" />
-                <span className="sr-only">Đang tải danh sách người dùng</span>
-              </li>
-            )}
-            {userListQuery.isError && (
-              <li className="px-2 py-3 text-sm text-danger" role="alert">
-                <p>Không thể tải danh sách người dùng.</p>
-                <button
-                  type="button"
-                  onClick={() => userListQuery.refetch()}
-                  className="mt-2 font-semibold underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                >
-                  Thử lại
-                </button>
-              </li>
-            )}
-            {userList.map((listedUser) => {
-              const isSelected =
-                Number(listedUser.userId) === normalizedReceiverId;
-              const unreadCount =
-                unreadCountByPeer.get(Number(listedUser.userId)) || 0;
-              return (
-                <li key={listedUser.userId}>
-                  <button
-                    type="button"
-                    aria-current={isSelected ? "true" : undefined}
-                    onClick={() => {
-                      setReceiverId(listedUser.userId);
-                      setIsMobileConversationOpen(true);
-                    }}
-                    className={[
-                      "flex min-h-12 w-full items-center gap-3 rounded-xl px-3 py-2 text-left",
-                      "transition duration-200 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                      isSelected ? "bg-accent/10 text-accent" : "text-ink",
-                    ].join(" ")}
-                  >
-                    <span
-                      aria-hidden="true"
-                      className={[
-                        "grid size-9 shrink-0 place-items-center rounded-xl text-sm font-bold",
-                        isSelected
-                          ? "bg-accent text-accent-foreground"
-                          : "bg-surface-muted text-muted",
-                      ].join(" ")}
-                    >
-                      {listedUser.userName?.slice(0, 1)?.toLocaleUpperCase() ||
-                        "?"}
-                    </span>
-                    <span className="truncate text-sm font-semibold">
-                      {listedUser.userName}
-                    </span>
-                    {unreadCount > 0 && (
-                      <span
-                        aria-label={`${unreadCount} tin nhắn chưa đọc`}
-                        className="ml-auto grid min-w-6 place-items-center rounded-full bg-accent px-2 py-0.5 text-xs font-bold tabular-nums text-accent-foreground"
-                      >
-                        {unreadCount > 99 ? "99+" : unreadCount}
-                      </span>
-                    )}
-                  </button>
-                </li>
-              );
-            })}
-            {unreadSummaryQuery.isError && (
-              <li className="px-2 py-3 text-sm text-danger" role="alert">
-                <p>Không thể tải số tin nhắn chưa đọc.</p>
-                <button
-                  type="button"
-                  onClick={() => unreadSummaryQuery.refetch()}
-                  className="mt-2 font-semibold underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                >
-                  Thử lại
-                </button>
-              </li>
-            )}
-            {!userListQuery.isPending &&
-              !userListQuery.isError &&
-              userList.length === 0 && (
-                <li className="px-2 py-3 text-sm text-muted">
-                  Chưa có người dùng khác.
-                </li>
-              )}
-          </ul>
-        </aside>
-
-        <section
-          aria-label="Cuộc trò chuyện"
-          className={cn(
-            "min-h-0 min-w-0 flex-col overflow-hidden border-line bg-surface lg:rounded-panel lg:border lg:shadow-panel",
-            isMobileConversationOpen ? "flex" : "hidden lg:flex",
-          )}
-        >
-          <header className="flex min-h-[4.5rem] flex-wrap items-center justify-between gap-3 border-b border-line px-3 py-3 sm:px-6">
-            <div className="flex min-w-0 flex-1 items-center gap-2">
-              <Button
-                variant="quiet"
-                aria-label="Quay lại danh sách liên hệ"
-                onClick={() => setIsMobileConversationOpen(false)}
-                className="size-10 min-h-10 shrink-0 rounded-lg px-2 lg:hidden"
-              >
-                <IoArrowBack aria-hidden="true" className="size-5" />
-              </Button>
-              <div className="min-w-0">
-                <p className="truncate text-base font-bold">
-                  {selectedUserName}
-                </p>
-                <p className="mt-0.5 truncate text-xs text-muted">
-                  {selectedUser
-                    ? `Trò chuyện với ${selectedUser.userName}`
-                    : "Chọn một người dùng để bắt đầu"}
-                </p>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {hasValidReceiver && (
-                <>
-                  <Button
-                    variant="secondary"
-                    onClick={() => requestCall(false)}
-                    aria-label={`Gọi thoại cho ${selectedUserName}`}
-                    className="min-h-10 rounded-lg px-3"
-                  >
-                    <IoCall aria-hidden="true" />
-                    <span className="hidden sm:inline">Gọi thoại</span>
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={() => requestCall(true)}
-                    aria-label={`Gọi video cho ${selectedUserName}`}
-                    className="min-h-10 rounded-lg px-3"
-                  >
-                    <FaVideo aria-hidden="true" />
-                    <span className="hidden sm:inline">Gọi video</span>
-                  </Button>
-                </>
-              )}
-            </div>
-          </header>
-
-          {hasValidReceiver ? (
-            <>
-              {(directConversationQuery.isError ||
-                (messagesQuery.isError && !messagesQuery.data)) && (
-                <div
-                  className="flex items-center justify-between gap-3 border-b border-danger/30 bg-danger/5 px-4 py-3 text-sm text-danger sm:px-6"
-                  role="alert"
-                >
-                  <span>
-                    {directConversationQuery.isError
-                      ? "Không thể mở cuộc trò chuyện."
-                      : "Không thể tải tin nhắn."}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      directConversationQuery.isError
-                        ? directConversationQuery.refetch()
-                        : messagesQuery.refetch()
-                    }
-                    className="shrink-0 font-semibold underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger"
-                  >
-                    Thử lại
-                  </button>
-                </div>
-              )}
-              <div
-                ref={messageListRef}
-                onScroll={handleMessageListScroll}
-                className="flex-1 space-y-3 overflow-y-auto px-4 py-5 sm:px-7 sm:py-7"
-                role="log"
-                aria-label={`Tin nhắn với ${selectedUserName}`}
-                aria-live="polite"
-                aria-relevant="additions"
-              >
-                {messagesQuery.isFetchingPreviousPage && (
-                  <div
-                    className="py-2 text-center text-xs text-muted"
-                    role="status"
-                  >
-                    Đang tải tin nhắn cũ hơn...
-                  </div>
-                )}
-                {messagesQuery.isFetchPreviousPageError && (
-                  <div
-                    className="flex items-center justify-center gap-2 py-2 text-sm text-danger"
-                    role="alert"
-                  >
-                    <span>Không thể tải tin nhắn cũ hơn.</span>
-                    <button
-                      type="button"
-                      onClick={loadOlderMessages}
-                      className="font-semibold underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger"
-                    >
-                      Thử lại
-                    </button>
-                  </div>
-                )}
-                {(directConversationQuery.isPending ||
-                  (directConversationQuery.isSuccess &&
-                    messagesQuery.isPending)) && (
-                  <div className="space-y-3" role="status">
-                    <span className="block h-10 w-2/3 animate-pulse rounded-2xl bg-surface-muted motion-reduce:animate-none" />
-                    <span className="ml-auto block h-10 w-1/2 animate-pulse rounded-2xl bg-accent/10 motion-reduce:animate-none" />
-                    <span className="sr-only">Đang tải tin nhắn</span>
-                  </div>
-                )}
-                {!messagesQuery.isPending &&
-                  directConversationQuery.isSuccess &&
-                  messages.length === 0 && (
-                    <div className="grid min-h-full place-items-center py-10 text-center">
-                      <div className="max-w-sm">
-                        <p className="text-base font-bold">Chưa có tin nhắn</p>
-                        <p className="mt-2 text-sm leading-6 text-muted">
-                          Gửi lời chào đầu tiên để bắt đầu cuộc trò chuyện.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                {messageGroups.map((group) => (
-                  <React.Fragment key={group.key}>
-                    <div
-                      className="flex items-center justify-center py-2"
-                      role="separator"
-                      aria-label={group.label}
-                      data-message-day
-                    >
-                      <span className="rounded-full bg-surface-muted px-3 py-1 text-xs font-medium text-muted">
-                        {group.label}
-                      </span>
-                    </div>
-                    {group.messages.map((msg, index) => {
-                      const isSent = Number(msg.senderId) === currentUserId;
-                      const date = toValidDate(msg.Timestamp);
-                      const time = formatMessageTime(msg.Timestamp);
-                      const isLatestSeen =
-                        isSent && Number(msg.MessageId) === latestSeenMessageId;
-
-                      return (
-                        <div
-                          key={msg.MessageId ?? `${msg.senderId}-${index}`}
-                          data-chat-message
-                          data-message-id={msg.MessageId}
-                          className={`flex ${isSent ? "justify-end" : "justify-start"}`}
-                        >
-                          <div className="flex max-w-[85%] flex-col sm:max-w-[70%]">
-                            <p
-                              className={[
-                                "whitespace-pre-wrap break-words rounded-2xl px-4 py-3 text-sm leading-6",
-                                isSent
-                                  ? "rounded-br-md bg-accent text-accent-foreground"
-                                  : "rounded-bl-md bg-surface-muted text-ink",
-                              ].join(" ")}
-                            >
-                              {msg.message}
-                            </p>
-                            {(time || isLatestSeen) && (
-                              <div
-                                className={`mt-1 flex items-center gap-2 text-xs tabular-nums text-muted ${isSent ? "justify-end" : "justify-start"}`}
-                              >
-                                {time && date && (
-                                  <time dateTime={date.toISOString()}>
-                                    {time}
-                                  </time>
-                                )}
-                                {isLatestSeen && <span>Đã xem</span>}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </React.Fragment>
-                ))}
-              </div>
-              <form
-                className="border-t border-line p-3 sm:px-6 sm:py-4"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  sendMessage();
-                }}
-              >
-                <label className="sr-only" htmlFor="chat-message">
-                  Tin nhắn mới
-                </label>
-                <div className="flex items-end gap-2 rounded-2xl border border-line bg-canvas p-2 focus-within:ring-2 focus-within:ring-accent">
-                  <textarea
-                    id="chat-message"
-                    rows={1}
-                    value={message}
-                    onChange={(event) => setMessage(event.target.value)}
-                    onKeyDown={handleMessageKeyDown}
-                    placeholder="Nhập tin nhắn..."
-                    className="max-h-32 min-h-10 flex-1 resize-y bg-transparent px-3 py-2 text-sm leading-6 text-ink placeholder:text-muted focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
-                  />
-                  <Button
-                    type="submit"
-                    disabled={
-                      sendMessageMutation.isPending ||
-                      !message.trim() ||
-                      !hasValidConversationId
-                    }
-                    className="min-h-10 shrink-0 rounded-xl px-4"
-                  >
-                    Gửi
-                  </Button>
-                </div>
-                <p className="mt-2 px-2 text-xs text-muted">
-                  Nhấn Enter để gửi, Shift + Enter để xuống dòng
-                </p>
-              </form>
-            </>
-          ) : (
-            <div className="grid flex-1 place-items-center px-6 py-12 text-center">
-              <div className="max-w-sm">
-                <p className="text-lg font-bold">
-                  Chọn một người để trò chuyện
-                </p>
-                <p className="mt-2 text-sm leading-6 text-muted">
-                  Danh sách người dùng đang ở bên trái.
-                </p>
-              </div>
-            </div>
-          )}
-        </section>
+        <ChatConversation
+          currentUserId={currentUserId}
+          directConversationQuery={directConversationQuery}
+          hasValidConversationId={hasValidConversationId}
+          hasValidReceiver={hasValidReceiver}
+          isMobileConversationOpen={isMobileConversationOpen}
+          latestSeenMessageId={latestSeenMessageId}
+          loadOlderMessages={loadOlderMessages}
+          message={message}
+          messageGroups={messageGroups}
+          messageListRef={messageListRef}
+          messages={messages}
+          messagesQuery={messagesQuery}
+          onBack={() => setIsMobileConversationOpen(false)}
+          onMessageChange={(event) => setMessage(event.target.value)}
+          onMessageKeyDown={handleMessageKeyDown}
+          onMessageListScroll={handleMessageListScroll}
+          onRequestCall={requestCall}
+          onSendMessage={sendMessage}
+          selectedUser={selectedUser}
+          selectedUserName={selectedUserName}
+          sendMessageMutation={sendMessageMutation}
+        />
       </div>
 
-      <Dialog
-        open={Boolean(incomingCall)}
-        onOpenChange={(open) => {
-          if (!open) rejectIncomingCall();
-        }}
-        title="Cuộc gọi đến"
-        description={`Bạn có muốn nhận cuộc gọi${incomingCall?.video ? " video" : ""} từ ${incomingCall?.name || "người dùng"}?`}
-        footer={
-          <>
-            <Button variant="secondary" onClick={rejectIncomingCall}>
-              Từ chối
-            </Button>
-            <Button onClick={acceptIncomingCall}>Nghe máy</Button>
-          </>
-        }
-      >
-        <p className="text-sm leading-6 text-muted">
-          Bạn có thể kết thúc cuộc gọi bất cứ lúc nào.
-        </p>
-      </Dialog>
-
-      <Dialog
-        open={isCallModalVisible}
-        onOpenChange={(open) => {
-          if (!open) handleCallCancel();
-        }}
-        title={callHasVideo ? "Cuộc gọi video" : "Cuộc gọi thoại"}
-        description={`Đang kết nối với ${selectedUserName}.`}
-        className="max-w-3xl"
-        footer={
-          <Button
-            variant="secondary"
-            className="text-danger"
-            onClick={handleCallCancel}
-          >
-            Kết thúc cuộc gọi
-          </Button>
-        }
-      >
-        {callHasVideo ? (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="overflow-hidden rounded-xl bg-slate-950">
-              <video
-                ref={localVideoRef}
-                autoPlay
-                muted
-                playsInline
-                aria-label="Hình ảnh camera của bạn"
-                className="aspect-video w-full object-cover"
-              />
-              <p className="px-3 py-2 text-xs text-white/80">Bạn</p>
-            </div>
-            <div className="overflow-hidden rounded-xl bg-slate-950">
-              <video
-                ref={remoteVideoRef}
-                autoPlay
-                playsInline
-                aria-label={`Hình ảnh camera của ${selectedUserName}`}
-                className="aspect-video w-full object-cover"
-              />
-              <p className="px-3 py-2 text-xs text-white/80">
-                {selectedUserName}
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div className="grid min-h-48 place-items-center rounded-xl bg-surface-muted p-6 text-center">
-            <audio
-              ref={remoteAudioRef}
-              autoPlay
-              aria-label={`Âm thanh cuộc gọi từ ${selectedUserName}`}
-              className="sr-only"
-            />
-            <div>
-              <span className="mx-auto grid size-16 place-items-center rounded-2xl bg-accent text-xl font-bold text-accent-foreground">
-                {selectedUserName.slice(0, 1).toLocaleUpperCase()}
-              </span>
-              <p className="mt-4 font-semibold">{selectedUserName}</p>
-              <p className="mt-1 text-sm text-muted">
-                Đang trò chuyện bằng giọng nói
-              </p>
-            </div>
-          </div>
-        )}
-      </Dialog>
-
-      <Dialog
-        open={calling}
-        onOpenChange={(open) => {
-          if (!open) handleCallingCancel();
-        }}
-        title="Đang gọi"
-        description="Đang chờ người nhận trả lời."
-        footer={
-          <Button variant="secondary" onClick={handleCallingCancel}>
-            Hủy cuộc gọi
-          </Button>
-        }
-      >
-        <div className="flex items-center gap-3">
-          <span
-            aria-hidden="true"
-            className="size-3 animate-pulse rounded-full bg-accent motion-reduce:animate-none"
-          />
-          <p className="text-sm text-muted">
-            Cuộc gọi sẽ kết nối khi người nhận chấp thuận.
-          </p>
-        </div>
-      </Dialog>
+      <CallDialogs
+        acceptIncomingCall={acceptIncomingCall}
+        callHasVideo={callHasVideo}
+        calling={calling}
+        handleCallCancel={handleCallCancel}
+        handleCallingCancel={handleCallingCancel}
+        incomingCall={incomingCall}
+        isCallModalVisible={isCallModalVisible}
+        localVideoRef={localVideoRef}
+        rejectIncomingCall={rejectIncomingCall}
+        remoteAudioRef={remoteAudioRef}
+        remoteVideoRef={remoteVideoRef}
+        selectedUserName={selectedUserName}
+      />
     </main>
   );
 };
