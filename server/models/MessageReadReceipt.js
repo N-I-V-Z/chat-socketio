@@ -1,7 +1,10 @@
+const auditAttributes = require("./auditAttributes");
+
 module.exports = function (sequelize, DataTypes) {
   return sequelize.define(
     "MessageReadReceipt",
     {
+      ...auditAttributes(DataTypes),
       MessageId: {
         type: DataTypes.INTEGER,
         allowNull: false,
@@ -30,7 +33,7 @@ module.exports = function (sequelize, DataTypes) {
       sequelize,
       tableName: "MessageReadReceipts",
       schema: "dbo",
-      timestamps: false,
+      timestamps: true,
       indexes: [
         {
           name: "IX_MessageReadReceipts_UserId_MessageId",

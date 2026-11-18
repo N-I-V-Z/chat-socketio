@@ -2,6 +2,8 @@ const { Kafka } = require("kafkajs");
 const { QueryTypes } = require("sequelize");
 const OUTBOX_EVENT_TYPES = require("../constants/outboxEventTypes");
 const { userRoom, parseUserId } = require("../utils/chatUtils"); //[cite: 6]
+const redisConnection = require("./redisConnection");
+const metrics = require("./metrics");
 
 const CHAT_EVENTS_TOPIC = "chat.events";
 const OUTBOX_BATCH_SIZE = 25;
@@ -17,7 +19,7 @@ function createChatEventPipeline({
   db,
   io,
   kafka,
-  logger = console,
+  logger = require("./logger"),
   pollIntervalMs = 1000,
   brokers = (process.env.KAFKA_BROKERS || "localhost:9092")
     .split(",")
@@ -37,6 +39,10 @@ function createChatEventPipeline({
     });
   const producer = kafkaClient.producer();
   const consumer = kafkaClient.consumer({ groupId });
+  const admin =
+    typeof kafkaClient.admin === "function" ? kafkaClient.admin() : null;
+  let lagTimer = null;
+  let adminConnected = false;
   let producerConnected = false;
   let consumerConnected = false;
   let timer = null;
@@ -171,6 +177,10 @@ function createChatEventPipeline({
       return;
     }
 
+    const dedupClient = redisConnection.getClient();
+    const dedupKey = `kafka:consumed:${event.eventId}`;
+    if (dedupClient?.isReady && (await dedupClient.get(dedupKey))) return;
+
     const message = await db.Message.findByPk(messageId, {
       attributes: [
         "MessageId",
@@ -217,6 +227,8 @@ function createChatEventPipeline({
     for (const userId of targetUserIds) {
       io.to(userRoom(userId)).emit("receiveMessage", messageEvent);
     }
+    if (dedupClient?.isReady)
+      await dedupClient.set(dedupKey, "1", { EX: 86400 });
   }
 
   async function ensureKafkaConnected() {
@@ -267,20 +279,66 @@ function createChatEventPipeline({
     }, pollIntervalMs);
     timer.unref?.();
     await tick();
+    if (admin) {
+      lagTimer = setInterval(() => {
+        void sampleLag();
+      }, 30000);
+      lagTimer.unref?.();
+      void sampleLag();
+    }
+  }
+
+  async function sampleLag() {
+    try {
+      if (!adminConnected) {
+        await admin.connect();
+        adminConnected = true;
+      }
+      const [topicOffsets, groupOffsets] = await Promise.all([
+        admin.fetchTopicOffsets(CHAT_EVENTS_TOPIC),
+        admin.fetchOffsets({ groupId, topics: [CHAT_EVENTS_TOPIC] }),
+      ]);
+      const committed = new Map(
+        (groupOffsets[0]?.partitions || []).map((part) => [
+          part.partition,
+          Number(part.offset),
+        ]),
+      );
+      for (const part of topicOffsets) {
+        const offset = committed.get(part.partition);
+        const high = Number(part.high);
+        metrics.kafkaLag.set(
+          { topic: CHAT_EVENTS_TOPIC, partition: String(part.partition) },
+          offset === undefined || offset < 0 ? 0 : Math.max(0, high - offset),
+        );
+      }
+    } catch (error) {
+      logger.warn(`Kafka lag sample unavailable (${errorCode(error)}).`);
+    }
   }
 
   async function stop() {
+    if (lagTimer) clearInterval(lagTimer);
+    lagTimer = null;
     if (timer) clearInterval(timer);
     timer = null;
     const disconnects = [];
     if (producerConnected) disconnects.push(producer.disconnect());
     if (consumerConnected) disconnects.push(consumer.disconnect());
+    if (adminConnected) disconnects.push(admin.disconnect());
     producerConnected = false;
     consumerConnected = false;
+    adminConnected = false;
     await Promise.all(disconnects);
   }
 
-  return { consumeMessage, relayPendingEvents, start, stop };
+  return {
+    consumeMessage,
+    relayPendingEvents,
+    start,
+    stop,
+    isReady: () => producerConnected && consumerConnected,
+  };
 }
 
 module.exports = {

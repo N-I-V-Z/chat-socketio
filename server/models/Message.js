@@ -1,9 +1,11 @@
 const Sequelize = require("sequelize");
+const auditAttributes = require("./auditAttributes");
 
 module.exports = function (sequelize, DataTypes) {
   return sequelize.define(
     "Message",
     {
+      ...auditAttributes(DataTypes),
       MessageId: {
         autoIncrement: true,
         type: DataTypes.INTEGER,
@@ -40,7 +42,7 @@ module.exports = function (sequelize, DataTypes) {
       sequelize,
       tableName: "Message",
       schema: "dbo",
-      timestamps: false,
+      timestamps: true,
       indexes: [
         {
           name: "PK__Message__C87C0C9CE1B8AE90",

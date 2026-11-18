@@ -6,5 +6,6 @@ const requireAdmin = require("../middleware/requireAdmin");
 router.use(requireAccessToken, requireAdmin);
 router.get("/users", adminController.getUsers);
 router.get("/logs", adminController.getAuditLogs);
+router.patch("/users/:userId/status", adminController.setUserStatus);
 
 module.exports = router;

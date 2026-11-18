@@ -6,7 +6,7 @@ const MAX_RECONNECT_DELAY_MS = 2000;
 function createRedisConnection({
   url = process.env.REDIS_URL,
   clientFactory = createClient,
-  logger = console,
+  logger = require("./logger"),
 } = {}) {
   let client = null;
   let connectPromise = null;
@@ -20,7 +20,7 @@ function createRedisConnection({
     unavailableWarningLogged = true;
     const code = error?.code || error?.name || "UNKNOWN";
     logger.warn(
-      `Redis unavailable (${code}); continuing with database fallback.`
+      `Redis unavailable (${code}); continuing with database fallback.`,
     );
   }
 
@@ -67,7 +67,7 @@ function createRedisConnection({
       return Promise.resolve(false);
     }
 
-    connectPromise = redisClient
+    const attempt = redisClient
       .connect()
       .then(() => true)
       .catch((error) => {
@@ -77,6 +77,14 @@ function createRedisConnection({
       .finally(() => {
         connectPromise = null;
       });
+    connectPromise = Promise.race([
+      attempt,
+      new Promise((resolve) => {
+        const timeout = setTimeout(() => resolve(false), 3000);
+        timeout.unref?.();
+        attempt.finally(() => clearTimeout(timeout));
+      }),
+    ]);
     return connectPromise;
   }
 

@@ -76,11 +76,11 @@ Docker Compose starts Redis on the private application network; its port is not 
 
 The server caches the user directory for 60 seconds and each conversation-history page for 30 seconds. Conversation entries include message text and are volatile: they are not written to disk; successful writes invalidate the latest page. If Redis is unavailable, the server logs the failure and loads data from SQL Server instead. For local development, `REDIS_URL` is optional; leave it unset to run without Redis, or point it to a Redis instance reachable by the server.
 
-The Socket.IO Redis adapter fans events out across server replicas. When Redis is not ready during startup, the server reports that the adapter is unavailable and continues with in-process Socket.IO delivery.
+The Socket.IO Redis adapter fans events out across server replicas. Redis is required for realtime connections, call sessions, and presence. When Redis is unavailable, HTTP routes continue, `/readyz` returns `503`, and new realtime connections are rejected. Local development needs `REDIS_URL` when testing calls or sockets.
 
 ## Notifications and read state
 
-SQL Server remains authoritative for messages, read receipts, and unread counts. A message, the sender's read receipt, and a `chat.message.created` outbox row are committed in one database transaction. The relay publishes outbox rows to Kafka and marks them published only after broker acknowledgement; failed delivery is retried with bounded backoff. Kafka delivery is at-least-once, so clients deduplicate messages by `MessageId`.
+SQL Server remains authoritative for messages, read receipts, and unread counts. A message, the sender's read receipt, and a `chat.message.created` outbox row are committed in one database transaction. The relay publishes outbox rows to Kafka and marks them published only after broker acknowledgement; failed delivery is retried with bounded backoff. Kafka delivery is at-least-once. The consumer records delivered event IDs in Redis for 24 hours and clients deduplicate messages by `MessageId`; duplicates remain possible around a process crash.
 
 Kafka events contain identifiers rather than message bodies. Consumers load the message from SQL Server and emit it to authenticated Socket.IO user rooms. If Kafka is unavailable, message writes continue to persist in SQL Server and the outbox is retried after Kafka reconnects. Unread totals are recalculated from SQL Server on reconnect; per-user unread data is not stored in the shared user-directory cache.
 
@@ -93,6 +93,8 @@ The authenticated conversation API exposes unread counts per peer and accepts a 
 - `GET` and `POST /api/v1/conversations/:conversationId/messages` list and create conversation messages.
 - `PUT /api/v1/conversations/:conversationId/read-receipt` accepts `{ "upToMessageId": 123 }`.
 - Socket.IO emits `conversationRead` to the other conversation participants after a read update.
+
+Admin accounts can set `isActive` with `PATCH /api/v1/admin/users/:userId/status` and `{ "isActive": false }`; inactive accounts cannot log in, refresh, use authenticated APIs, or connect via Socket.IO. Calls carry a server-issued `callId` on every signaling event, and the server authorizes both participants against the Redis call session.
 
 Message times use the browser's local time in `HH:mm` format. Messages are grouped under “Hôm nay”, “Hôm qua”, a Vietnamese weekday for recent days, or `dd/MM/yyyy` for older dates. Messages with a null legacy timestamp appear under “Không rõ thời gian” and do not receive a fabricated time.
 
@@ -115,6 +117,8 @@ cd client
 npm install
 npm start
 ```
+
+The server exposes `/livez` for process liveness and `/readyz` for DB, Redis, and Kafka readiness. Set `METRICS_TOKEN` to enable `/metrics`; scrape it with `Authorization: Bearer <token>`. Metrics include active sockets, rejected socket events, dependency state, rate limits, and Kafka consumer lag. Logs are structured JSON through Pino. To run a local load benchmark against a running server, set `LOAD_TEST_TOKEN` to a valid access token, optionally set `LOAD_TEST_URL`, `LOAD_TEST_CLIENTS`, and `LOAD_TEST_DURATION_MS`, then run `npm --prefix server run test:load`.
 
 ## Pre-commit Checks
 

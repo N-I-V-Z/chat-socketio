@@ -1,9 +1,11 @@
 const { Sequelize } = require("sequelize");
+const auditAttributes = require("./auditAttributes");
 
 module.exports = function (sequelize, DataTypes) {
   return sequelize.define(
     "RefreshToken",
     {
+      ...auditAttributes(DataTypes),
       tokenId: {
         type: DataTypes.INTEGER,
         allowNull: false,
@@ -43,7 +45,7 @@ module.exports = function (sequelize, DataTypes) {
     {
       tableName: "RefreshTokens",
       schema: "dbo",
-      timestamps: false,
-    }
+      timestamps: true,
+    },
   );
 };

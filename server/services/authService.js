@@ -91,7 +91,7 @@ function newRefreshToken() {
 
 async function createRefreshSession(userId, res, familyId = randomUUID()) {
   const user = await db.Users.findByPk(userId);
-  if (!user) {
+  if (!user || user.isActive === false) {
     throw httpError(401, "INVALID_CREDENTIALS", "Authentication required");
   }
 
@@ -136,7 +136,7 @@ async function register(userName, password) {
 
 async function authenticate(userName, password) {
   const user = await db.Users.unscoped().findOne({ where: { userName } });
-  if (!user) {
+  if (!user || user.isActive === false) {
     return null;
   }
 
@@ -177,7 +177,7 @@ async function refreshSession(token, res) {
   }
 
   const user = await db.Users.findByPk(storedToken.userId);
-  if (!user) {
+  if (!user || user.isActive === false) {
     await revokeFamily(storedToken.familyId);
     throw httpError(401, "INVALID_REFRESH_TOKEN", "Authentication required");
   }

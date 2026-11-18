@@ -1,5 +1,6 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
+const redisConnection = require("../services/redisConnection");
 const {
   CHAT_EVENTS_TOPIC,
   createChatEventPipeline,
@@ -159,4 +160,33 @@ test("outbox failures release the claim and schedule bounded retries", async () 
   assert.equal(retry.options.replacements.delaySeconds, 1);
   assert.equal(retry.options.replacements.lastErrorCode, "E_KAFKA");
   assert.equal(calls.marks.length, 0);
+});
+
+test("consumer skips an event already delivered by this group", async () => {
+  const original = redisConnection.getClient;
+  const delivered = new Set();
+  redisConnection.getClient = () => ({
+    isReady: true,
+    async get(key) {
+      return delivered.has(key) ? "1" : null;
+    },
+    async set(key) {
+      delivered.add(key);
+    },
+  });
+  const { calls, consumerHandlers, pipeline } = createPipelineFakes();
+  try {
+    await pipeline.start();
+    const message = {
+      value: Buffer.from(
+        JSON.stringify({ ...outboxPayload, eventType: "chat.message.created" }),
+      ),
+    };
+    await consumerHandlers.eachMessage({ message });
+    await consumerHandlers.eachMessage({ message });
+    assert.equal(calls.emits.length, 2);
+  } finally {
+    redisConnection.getClient = original;
+    await pipeline.stop();
+  }
 });

@@ -2,12 +2,12 @@ const redisConnection = require("./redisConnection");
 
 function createCacheService({
   connection = redisConnection,
-  logger = console,
+  logger = require("./logger"),
 } = {}) {
   function logCacheFailure(operation, error) {
     const code = error?.code || error?.name || "UNKNOWN";
     logger.warn(
-      `Redis cache ${operation} failed (${code}); database remains available.`
+      `Redis cache ${operation} failed (${code}); database remains available.`,
     );
   }
 
