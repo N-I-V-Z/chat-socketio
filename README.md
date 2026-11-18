@@ -102,6 +102,12 @@ The client uses TanStack Query to cache chat and admin responses in browser memo
 
 ## Local Development
 
+### Client structure
+
+The React client is organized by product feature under `client/src/features`: `auth` owns sign-in, registration, and the auth store; `chat` owns conversations, messaging, read receipts, and call media; `admin` owns user and audit views. Shared HTTP configuration, query keys, layout, and reusable controls live under `client/src/shared`. Keep server payload conversion in feature API or view-model modules rather than presentational components. The visual rules and semantic tokens are documented in `client/DESIGN.md`.
+
+Run `npm --prefix client test -- --watchAll=false` and `npm --prefix client run build` after client changes. The root pre-commit hook runs the full server/client validation gate.
+
 The infrastructure can be started with Docker while running the client and server directly. Put `DB_HOST=localhost`, `DB_PORT=1433`, `DB_USER=sa`, `DB_PASSWORD`, `DB_NAME=ChatDb`, `KAFKA_BROKERS=localhost:29092`, and a random `JWT_ACCESS_SECRET` of at least 32 bytes in the root `.env` file. For local HTTP, use `COOKIE_SECURE=false`. Start the database, Redis, and Kafka with `docker compose up -d db redis kafka`, then run:
 
 ```bash

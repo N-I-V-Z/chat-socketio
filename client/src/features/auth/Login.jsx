@@ -65,6 +65,7 @@ function Login() {
         aria-label="Đăng nhập"
         className="grid gap-5 animate-fade-up"
         onSubmit={handleLogin}
+        aria-busy={isSubmitting}
         noValidate
       >
         <TextField
@@ -110,7 +111,12 @@ function Login() {
               />
             )}
           </Button>
-          <Button variant="quiet" onClick={handleClear} className="w-full">
+          <Button
+            variant="quiet"
+            onClick={handleClear}
+            disabled={isSubmitting}
+            className="w-full"
+          >
             Xóa nội dung
           </Button>
         </div>

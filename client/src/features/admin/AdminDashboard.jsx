@@ -3,13 +3,7 @@ import { Link } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { useQuery } from "@tanstack/react-query";
 import { getAuditLogs, listAdminUsers } from "./api";
-import {
-  eventLabels,
-  eventOptions,
-  formatDate,
-  getActorName,
-  getOutcomeLabel,
-} from "./viewModel";
+import { eventOptions, toAuditItem } from "./viewModel";
 import { queryKeys } from "../../shared/api/queryKeys";
 import Button from "../../shared/ui/Button";
 import { cn } from "../../shared/ui/cn";
@@ -113,6 +107,7 @@ function AdminDashboard() {
   });
   const users = usersQuery.data || [];
   const logs = logsQuery.data || { items: [], total: 0 };
+  const auditItems = logs.items.map(toAuditItem);
   const activeQueryError =
     activeTab === "users" ? usersQuery.isError : logsQuery.isError;
   const activeQueryLoading =
@@ -126,23 +121,26 @@ function AdminDashboard() {
 
   return (
     <main className="h-full min-h-0 overflow-y-auto bg-canvas">
-      <header className="border-b border-line bg-surface">
-        <div className="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-6 sm:px-6 sm:py-8 md:flex-row md:items-center md:justify-between lg:px-8">
+      <header className="bg-canvas">
+        <div className="mx-auto flex max-w-7xl flex-col gap-5 px-4 pb-5 pt-8 sm:px-6 sm:pb-7 sm:pt-10 md:flex-row md:items-end md:justify-between lg:px-8">
           <div className="min-w-0">
-            <h1 className="text-balance text-2xl font-bold text-ink sm:text-3xl">
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-accent">
+              Không gian quản trị
+            </p>
+            <h1 className="mt-3 text-balance text-3xl font-bold tracking-[-0.05em] text-ink sm:text-4xl">
               Bảng điều khiển
             </h1>
-            <p className="mt-2 max-w-prose text-pretty text-sm leading-6 text-muted">
+            <p className="mt-3 max-w-prose text-pretty text-sm leading-6 text-muted">
               Xin chào {user?.userName}. Audit log được lưu trong 30 ngày.
             </p>
           </div>
         </div>
       </header>
 
-      <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
+      <div className="mx-auto max-w-7xl px-4 pb-10 pt-3 sm:px-6 sm:pb-12 lg:px-8">
         <div
           aria-label="Khu vực quản trị"
-          className="mb-5 flex w-full gap-1 rounded-xl border border-line bg-surface p-1 sm:w-fit"
+          className="mb-6 flex w-full gap-1 rounded-xl border border-line bg-surface p-1 shadow-panel sm:w-fit"
           role="group"
         >
           <button
@@ -212,7 +210,7 @@ function AdminDashboard() {
             <div>
               <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
                 <div>
-                  <h2 className="text-balance text-base font-bold text-ink">
+                  <h2 className="text-balance text-lg font-bold tracking-[-0.025em] text-ink">
                     Tài khoản người dùng
                   </h2>
                   <p className="mt-1 text-sm text-muted">
@@ -253,7 +251,7 @@ function AdminDashboard() {
                     {users.map((listedUser) => (
                       <li
                         key={listedUser.userId}
-                        className="rounded-xl border border-line bg-surface p-4"
+                        className="rounded-xl border border-line bg-canvas/60 p-4"
                       >
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div className="min-w-0">
@@ -314,7 +312,10 @@ function AdminDashboard() {
                       </EmptyState>
                     ) : (
                       users.map((listedUser) => (
-                        <tr key={listedUser.userId}>
+                        <tr
+                          key={listedUser.userId}
+                          className="transition-colors hover:bg-surface-muted/50"
+                        >
                           <th
                             className="px-5 py-4 font-semibold text-ink"
                             scope="row"
@@ -338,7 +339,7 @@ function AdminDashboard() {
             <div>
               <div className="flex flex-col gap-4 px-4 py-4 sm:px-6 md:flex-row md:items-end md:justify-between">
                 <div>
-                  <h2 className="text-balance text-base font-bold text-ink">
+                  <h2 className="text-balance text-lg font-bold tracking-[-0.025em] text-ink">
                     Lịch sử hoạt động
                   </h2>
                   <p className="mt-1 text-sm text-muted">
@@ -360,7 +361,7 @@ function AdminDashboard() {
                       setPage(1);
                       setEventType(event.target.value);
                     }}
-                    className="min-h-11 w-full min-w-56 rounded-xl border border-line bg-surface px-3 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent"
+                    className="min-h-11 w-full min-w-56 rounded-lg border border-line bg-surface px-3 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/30"
                   >
                     {eventOptions.map((option) => (
                       <option key={option.value} value={option.value}>
@@ -416,24 +417,24 @@ function AdminDashboard() {
                   </div>
                 ) : (
                   <ul aria-label="Lịch sử audit" className="grid gap-3">
-                    {logs.items.map((log) => {
-                      const outcome = getOutcomeLabel(log.outcome);
+                    {auditItems.map((log) => {
+                      const outcome = log.outcome;
                       return (
                         <li
                           key={log.eventId}
-                          className="rounded-xl border border-line bg-surface p-4"
+                          className="rounded-xl border border-line bg-canvas/60 p-4"
                         >
                           <article>
                             <div className="flex flex-wrap items-start justify-between gap-3">
                               <div className="min-w-0">
                                 <h3 className="break-words text-sm font-bold text-ink">
-                                  {eventLabels[log.eventType] || log.eventType}
+                                  {log.eventLabel}
                                 </h3>
                                 <time
                                   dateTime={log.occurredAt}
                                   className="mt-1 block text-xs text-muted"
                                 >
-                                  {formatDate(log.occurredAt)}
+                                  {log.occurredAtLabel}
                                 </time>
                               </div>
                               <span
@@ -451,7 +452,7 @@ function AdminDashboard() {
                                   Người thực hiện
                                 </dt>
                                 <dd className="break-words text-ink">
-                                  {getActorName(log)}
+                                  {log.actorName}
                                 </dd>
                               </div>
                               <div className="grid gap-1">
@@ -459,9 +460,7 @@ function AdminDashboard() {
                                   Người liên quan
                                 </dt>
                                 <dd className="break-words text-muted">
-                                  {log.targetUserId
-                                    ? `ID ${log.targetUserId}`
-                                    : "Không có"}
+                                  {log.targetLabel}
                                 </dd>
                               </div>
                             </dl>
@@ -533,30 +532,29 @@ function AdminDashboard() {
                         Chưa có audit log.
                       </EmptyState>
                     ) : (
-                      logs.items.map((log) => (
-                        <tr key={log.eventId}>
+                      auditItems.map((log) => (
+                        <tr
+                          key={log.eventId}
+                          className="transition-colors hover:bg-surface-muted/50"
+                        >
                           <td className="whitespace-nowrap px-5 py-4 text-muted">
-                            {formatDate(log.occurredAt)}
+                            {log.occurredAtLabel}
                           </td>
                           <th
                             className="px-5 py-4 font-semibold text-ink"
                             scope="row"
                           >
-                            {eventLabels[log.eventType] || log.eventType}
+                            {log.eventLabel}
                           </th>
                           <td className="px-5 py-4 text-ink">
-                            {getActorName(log)}
+                            {log.actorName}
                           </td>
                           <td className="px-5 py-4 text-muted">
-                            {log.targetUserId
-                              ? `ID ${log.targetUserId}`
-                              : "Không có"}
+                            {log.targetLabel}
                           </td>
                           <td className="px-5 py-4">
-                            <span
-                              className={getOutcomeLabel(log.outcome).className}
-                            >
-                              {getOutcomeLabel(log.outcome).label}
+                            <span className={log.outcome.className}>
+                              {log.outcome.label}
                             </span>
                           </td>
                         </tr>

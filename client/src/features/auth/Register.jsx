@@ -66,6 +66,7 @@ function Register() {
         aria-label="Tạo tài khoản"
         className="grid gap-5 animate-fade-up"
         onSubmit={handleRegister}
+        aria-busy={isSubmitting}
         noValidate
       >
         <TextField
@@ -129,7 +130,12 @@ function Register() {
               />
             )}
           </Button>
-          <Button variant="quiet" onClick={handleClear} className="w-full">
+          <Button
+            variant="quiet"
+            onClick={handleClear}
+            disabled={isSubmitting}
+            className="w-full"
+          >
             Xóa nội dung
           </Button>
         </div>

@@ -40,3 +40,14 @@ export function getOutcomeLabel(outcome) {
   }
   return { label: "Không rõ", className: "text-muted" };
 }
+
+export function toAuditItem(log) {
+  return {
+    ...log,
+    eventLabel: eventLabels[log.eventType] || log.eventType,
+    occurredAtLabel: formatDate(log.occurredAt),
+    actorName: getActorName(log),
+    targetLabel: log.targetUserId ? `ID ${log.targetUserId}` : "Không có",
+    outcome: getOutcomeLabel(log.outcome),
+  };
+}
