@@ -405,41 +405,45 @@ const Chat = () => {
     [conversationId, hasValidConversationId, markReadMutation.mutate],
   );
 
+  // Cố định vòng đời IntersectionObserver kết hợp MutationObserver để tự động bắt tin nhắn mới thêm/optimistic updates
   useEffect(() => {
     const container = messageListRef.current;
-    if (!container || !messagesQuery.data) return undefined;
+    if (!container) return undefined;
 
-    const messageElements = container.querySelectorAll(
-      "[data-chat-message][data-message-id]",
-    );
-    if (typeof IntersectionObserver === "undefined") {
-      const markVisibleMessages = () => {
-        const containerBounds = container.getBoundingClientRect();
-        let highestVisibleMessageId = 0;
-        messageElements.forEach((element) => {
-          const bounds = element.getBoundingClientRect();
-          const visibleHeight =
-            Math.min(bounds.bottom, containerBounds.bottom) -
-            Math.max(bounds.top, containerBounds.top);
-          if (
-            visibleHeight > 0 &&
-            visibleHeight / Math.max(bounds.height, 1) >=
-              READ_INTERSECTION_THRESHOLD
-          ) {
-            highestVisibleMessageId = Math.max(
-              highestVisibleMessageId,
-              Number(element.dataset.messageId) || 0,
-            );
-          }
-        });
-        if (highestVisibleMessageId > 0) {
-          queueReadReceipt(highestVisibleMessageId);
+    const markVisibleMessages = (messageElements) => {
+      const containerBounds = container.getBoundingClientRect();
+      let highestVisibleMessageId = 0;
+      messageElements.forEach((element) => {
+        const bounds = element.getBoundingClientRect();
+        const visibleHeight =
+          Math.min(bounds.bottom, containerBounds.bottom) -
+          Math.max(bounds.top, containerBounds.top);
+        if (
+          visibleHeight > 0 &&
+          visibleHeight / Math.max(bounds.height, 1) >=
+            READ_INTERSECTION_THRESHOLD
+        ) {
+          highestVisibleMessageId = Math.max(
+            highestVisibleMessageId,
+            Number(element.dataset.messageId) || 0,
+          );
         }
-      };
+      });
+      if (highestVisibleMessageId > 0) {
+        queueReadReceipt(highestVisibleMessageId);
+      }
+    };
 
-      markVisibleMessages();
-      container.addEventListener("scroll", markVisibleMessages);
-      return () => container.removeEventListener("scroll", markVisibleMessages);
+    if (typeof IntersectionObserver === "undefined") {
+      const handleScroll = () => {
+        const messageElements = container.querySelectorAll(
+          "[data-chat-message][data-message-id]",
+        );
+        markVisibleMessages(messageElements);
+      };
+      handleScroll();
+      container.addEventListener("scroll", handleScroll);
+      return () => container.removeEventListener("scroll", handleScroll);
     }
 
     const observer = new IntersectionObserver(
@@ -461,9 +465,30 @@ const Chat = () => {
         threshold: [0, READ_INTERSECTION_THRESHOLD],
       },
     );
-    messageElements.forEach((element) => observer.observe(element));
-    return () => observer.disconnect();
-  }, [conversationId, messagesQuery.data, queueReadReceipt]);
+
+    const observeElements = () => {
+      const messageElements = container.querySelectorAll(
+        "[data-chat-message][data-message-id]",
+      );
+      messageElements.forEach((element) => observer.observe(element));
+    };
+
+    observeElements();
+
+    const mutationObserver = new MutationObserver(() => {
+      observeElements();
+    });
+
+    mutationObserver.observe(container, {
+      childList: true,
+      subtree: true,
+    });
+
+    return () => {
+      mutationObserver.disconnect();
+      observer.disconnect();
+    };
+  }, [conversationId, queueReadReceipt]);
 
   const sendMessageMutation = useMutation({
     mutationFn: async ({ conversationId: targetId, message: text }) => {
