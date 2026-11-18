@@ -7,6 +7,7 @@ const cacheKeys = require("../services/cacheKeys");
 const conversationService = require("../services/conversationService");
 const messageService = require("../services/messageService");
 const userService = require("../services/userService");
+const presenceService = require("../services/presenceService");
 
 test("conversation cache keys are stable regardless of participant order", () => {
   assert.equal(cacheKeys.conversationKey(7, 3), "messages:room:v1:3:7");
@@ -35,7 +36,10 @@ test("conversation page keys separate the latest page from cursor pages", () => 
 test("user list cache stores shared user data and filters the current user", async () => {
   const originalGetOrLoad = cacheService.getOrLoad;
   const originalFindAll = db.Users.findAll;
+  const originalGetOnline = presenceService.getOnlineUserIds;
   let cacheRequest;
+  let cachedDirectory;
+  let onlineUserIds = new Set([3]);
   db.Users.findAll = async (options) => {
     assert.deepEqual(options.attributes, ["userId", "userName"]);
     return [
@@ -45,16 +49,28 @@ test("user list cache stores shared user data and filters the current user", asy
   };
   cacheService.getOrLoad = async (key, ttl, loader) => {
     cacheRequest = { key, ttl };
-    return loader();
+    cachedDirectory ??= await loader();
+    return cachedDirectory;
+  };
+  presenceService.getOnlineUserIds = async (ids) => {
+    assert.deepEqual(ids, [3]);
+    return onlineUserIds;
   };
 
   try {
     const users = await userService.getAll("7");
     assert.deepEqual(cacheRequest, { key: "users:list:v1", ttl: 60 });
-    assert.deepEqual(users, [{ userId: 3, userName: "member" }]);
+    assert.deepEqual(users, [
+      { userId: 3, userName: "member", isOnline: true },
+    ]);
+    onlineUserIds = new Set();
+    assert.deepEqual(await userService.getAll("7"), [
+      { userId: 3, userName: "member", isOnline: false },
+    ]);
   } finally {
     db.Users.findAll = originalFindAll;
     cacheService.getOrLoad = originalGetOrLoad;
+    presenceService.getOnlineUserIds = originalGetOnline;
   }
 });
 

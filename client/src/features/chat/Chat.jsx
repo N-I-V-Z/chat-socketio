@@ -1,0 +1,657 @@
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useSelector } from "react-redux";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import io from "socket.io-client";
+import config from "../../shared/config/config";
+import { getAccessToken } from "../../shared/api/client";
+import {
+  getConversationMessages,
+  getDirectConversation,
+  getUnreadSummary,
+  listChatUsers,
+  sendConversationMessage,
+} from "./api";
+import { queryKeys } from "../../shared/api/queryKeys";
+import { appendConversationMessage } from "./utils/chatQueryCache";
+import { groupMessagesByDay } from "./utils/messageDateFormat";
+import ChatConversation from "./components/ChatConversation";
+import ChatSidebar from "./components/ChatSidebar";
+import CallDialogs from "./components/CallDialogs";
+import useReadReceipts from "./hooks/useReadReceipts";
+import useCallMedia from "./hooks/useCallMedia";
+import useChatSocketConnection from "./hooks/useChatSocketConnection";
+import useChatRealtimeMessages from "./hooks/useChatRealtimeMessages";
+import { useToast } from "../../shared/ui/ToastProvider";
+
+const EMPTY_MESSAGES = [];
+const SCROLL_EDGE_PX = 72;
+const BOTTOM_THRESHOLD_PX = 96;
+
+const Chat = () => {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const socket = useMemo(
+    () =>
+      io(config.API_ROOT, {
+        autoConnect: false,
+        auth: (callback) => callback({ token: getAccessToken() }),
+      }),
+    [],
+  );
+  const [receiverId, setReceiverId] = useState("");
+  const [isMobileConversationOpen, setIsMobileConversationOpen] =
+    useState(false);
+  const [drafts, setDrafts] = useState({});
+  const [isCallModalVisible, setIsCallModalVisible] = useState(false);
+  const [calling, setCalling] = useState(false);
+  const [callHasVideo, setCallHasVideo] = useState(false);
+  const [incomingCall, setIncomingCall] = useState(null);
+  const { user } = useSelector((state) => state.auth);
+  const currentUserId = Number(user?.userId);
+  const hasValidUserId =
+    Number.isSafeInteger(currentUserId) && currentUserId > 0;
+  const normalizedReceiverId = receiverId ? Number(receiverId) : null;
+  const draftKey = String(receiverId);
+  const message = drafts[draftKey] || "";
+  const hasValidReceiver =
+    Number.isSafeInteger(normalizedReceiverId) && normalizedReceiverId > 0;
+  const messageListRef = useRef(null);
+  const isNearBottomRef = useRef(true);
+  const scrollAnchorRef = useRef(null);
+  const initialScrollConversationRef = useRef(null);
+  const initialScrollCompletedRef = useRef(false);
+  const olderFetchInFlightRef = useRef(false);
+  const callIdRef = useRef(null);
+  const ringTimerRef = useRef(null);
+  const incomingTimerRef = useRef(null);
+
+  const receiverIdRef = useRef(receiverId);
+  receiverIdRef.current = receiverId;
+
+  const currentUserIdRef = useRef(currentUserId);
+  currentUserIdRef.current = currentUserId;
+  const isSocketConnected = useChatSocketConnection({
+    socket,
+    currentUserId,
+    queryClient,
+    toast,
+  });
+  useChatRealtimeMessages({ socket, queryClient, currentUserIdRef });
+  const {
+    localVideoRef,
+    remoteVideoRef,
+    remoteAudioRef,
+    peerConnectionRef,
+    stopLocalMedia,
+    closePeerConnection,
+    initializePeerConnection,
+    addIceCandidateSafely,
+    flushIceCandidateQueue,
+  } = useCallMedia({
+    socket,
+    receiverIdRef,
+    callIdRef,
+    setCallHasVideo,
+    setCalling,
+    setIsCallModalVisible,
+    toast,
+  });
+
+  const userListQuery = useQuery({
+    queryKey: hasValidUserId
+      ? queryKeys.chatUsers(currentUserId)
+      : ["chat-users", "disabled"],
+    queryFn: listChatUsers,
+    enabled: hasValidUserId,
+  });
+  const unreadSummaryQuery = useQuery({
+    queryKey: hasValidUserId
+      ? queryKeys.unreadSummary(currentUserId)
+      : ["conversation-unread", "disabled"],
+    queryFn: getUnreadSummary,
+    enabled: hasValidUserId,
+  });
+  const directConversationQueryKey =
+    hasValidReceiver && hasValidUserId
+      ? queryKeys.directConversation(currentUserId, normalizedReceiverId)
+      : ["direct-conversation", "disabled"];
+  const directConversationQuery = useQuery({
+    queryKey: directConversationQueryKey,
+    queryFn: () => getDirectConversation(normalizedReceiverId),
+    enabled: hasValidReceiver && hasValidUserId,
+  });
+  const rawConversationId = directConversationQuery.data?.conversationId;
+  const parsedConversationId =
+    rawConversationId === undefined ? null : Number(rawConversationId);
+  const conversationId =
+    Number.isSafeInteger(parsedConversationId) && parsedConversationId > 0
+      ? parsedConversationId
+      : null;
+  const hasValidConversationId = conversationId !== null;
+  const conversationQueryKey = hasValidConversationId
+    ? queryKeys.conversation(conversationId)
+    : ["conversation", "disabled"];
+  const messagesQuery = useInfiniteQuery({
+    queryKey: conversationQueryKey,
+    queryFn: ({ pageParam }) =>
+      getConversationMessages(conversationId, pageParam),
+    enabled: hasValidConversationId && hasValidUserId,
+    initialPageParam: null,
+    getPreviousPageParam: (firstPage) =>
+      firstPage.hasMore ? firstPage.nextCursor : undefined,
+    getNextPageParam: () => undefined,
+  });
+  const {
+    data: messagePages,
+    fetchPreviousPage,
+    hasPreviousPage,
+    isFetchingPreviousPage,
+  } = messagesQuery;
+  const userList = userListQuery.data || [];
+  const messages = useMemo(
+    () =>
+      messagesQuery.data?.pages.flatMap((page) =>
+        page.items.map((item) => ({
+          MessageId: item.MessageId,
+          senderId: Number(item.SenderId),
+          message: item.MessageText,
+          Timestamp: item.Timestamp ?? null,
+          readReceipts: item.readReceipts || [],
+        })),
+      ) || EMPTY_MESSAGES,
+    [messagesQuery.data],
+  );
+  const unreadCountByPeer = useMemo(
+    () =>
+      new Map(
+        (unreadSummaryQuery.data || []).map(({ peerUserId, unreadCount }) => [
+          Number(peerUserId),
+          Number(unreadCount),
+        ]),
+      ),
+    [unreadSummaryQuery.data],
+  );
+
+  const latestSeenMessageId = useMemo(() => {
+    if (!hasValidReceiver || messages.length === 0) return null;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const item = messages[i];
+      if (
+        Number(item.senderId) === currentUserId &&
+        item.readReceipts.some(
+          (receipt) => Number(receipt.UserId) === normalizedReceiverId,
+        )
+      ) {
+        return Number(item.MessageId) || 0;
+      }
+    }
+    return null;
+  }, [currentUserId, hasValidReceiver, messages, normalizedReceiverId]);
+
+  const messageGroups = useMemo(() => groupMessagesByDay(messages), [messages]);
+  const selectedUser = userList.find(
+    (listedUser) => Number(listedUser.userId) === normalizedReceiverId,
+  );
+  const selectedUserName = selectedUser?.userName || "Cuộc trò chuyện";
+
+  const loadOlderMessages = useCallback(() => {
+    const container = messageListRef.current;
+    if (
+      !container ||
+      !hasPreviousPage ||
+      isFetchingPreviousPage ||
+      olderFetchInFlightRef.current
+    ) {
+      return;
+    }
+
+    olderFetchInFlightRef.current = true;
+    const pageCount = messagePages?.pages.length || 0;
+    scrollAnchorRef.current = {
+      scrollHeight: container.scrollHeight,
+      scrollTop: container.scrollTop,
+    };
+
+    fetchPreviousPage()
+      .then((result) => {
+        if (
+          result.isFetchPreviousPageError ||
+          (result.data?.pages.length || 0) <= pageCount
+        ) {
+          scrollAnchorRef.current = null;
+        }
+      })
+      .catch(() => {
+        scrollAnchorRef.current = null;
+      })
+      .finally(() => {
+        olderFetchInFlightRef.current = false;
+      });
+  }, [
+    fetchPreviousPage,
+    hasPreviousPage,
+    isFetchingPreviousPage,
+    messagePages,
+  ]);
+
+  const handleMessageListScroll = useCallback(
+    (event) => {
+      const container = event.currentTarget;
+      isNearBottomRef.current =
+        container.scrollHeight - container.scrollTop - container.clientHeight <=
+        BOTTOM_THRESHOLD_PX;
+      if (container.scrollTop <= SCROLL_EDGE_PX) {
+        loadOlderMessages();
+      }
+    },
+    [loadOlderMessages],
+  );
+
+  useLayoutEffect(() => {
+    const container = messageListRef.current;
+    if (initialScrollConversationRef.current !== conversationId) {
+      initialScrollConversationRef.current = conversationId;
+      initialScrollCompletedRef.current = false;
+      isNearBottomRef.current = true;
+      scrollAnchorRef.current = null;
+    }
+    if (!container || !hasValidConversationId || !messagesQuery.data) {
+      return;
+    }
+
+    if (scrollAnchorRef.current) {
+      const anchor = scrollAnchorRef.current;
+      container.scrollTop =
+        anchor.scrollTop + container.scrollHeight - anchor.scrollHeight;
+      scrollAnchorRef.current = null;
+      isNearBottomRef.current = false;
+      return;
+    }
+
+    if (!initialScrollCompletedRef.current) {
+      container.scrollTop = container.scrollHeight;
+      initialScrollCompletedRef.current = true;
+      isNearBottomRef.current = true;
+      return;
+    }
+
+    if (isNearBottomRef.current) {
+      container.scrollTop = container.scrollHeight;
+    }
+  }, [conversationId, hasValidConversationId, messagesQuery.data]);
+
+  useReadReceipts({
+    conversationId,
+    currentUserId,
+    hasValidConversationId,
+    messageListRef,
+    queryClient,
+    toast,
+  });
+
+  const sendMessageMutation = useMutation({
+    mutationFn: ({ conversationId: targetId, message: text }) =>
+      sendConversationMessage(targetId, text),
+    onSuccess: (savedMessage, variables) => {
+      appendConversationMessage(
+        queryClient,
+        variables.conversationId,
+        savedMessage,
+      );
+    },
+    onError: (_error, variables) => {
+      const key = String(variables.receiverId);
+      setDrafts((current) => ({
+        ...current,
+        [key]: current[key]
+          ? `${variables.message}\n${current[key]}`
+          : variables.message,
+      }));
+      toast("Tin nhắn chưa được gửi. Vui lòng thử lại.", "error");
+    },
+  });
+
+  const handleAcceptCall = useCallback(
+    async (from, video, callId) => {
+      callIdRef.current = callId;
+      setReceiverId(from);
+      receiverIdRef.current = from;
+      setIsMobileConversationOpen(true);
+      setIsCallModalVisible(true);
+
+      const connection = await initializePeerConnection(video, false);
+      if (connection) {
+        socket.emit("callAccepted", { to: from, callId }, (reply) => {
+          if (reply?.ok) return;
+          callIdRef.current = null;
+          setIsCallModalVisible(false);
+          connection.close();
+          stopLocalMedia();
+          toast("Cuộc gọi đã hết hạn hoặc không còn khả dụng.", "error");
+        });
+      }
+    },
+    [initializePeerConnection, socket, stopLocalMedia, toast],
+  );
+
+  // useEffect đăng ký sự kiện socket giờ đây chỉ chạy một lần duy nhất khi mount
+  useEffect(() => {
+    const listeners = [];
+    const register = (event, handler) => {
+      socket.on(event, handler);
+      listeners.push([event, handler]);
+    };
+    register("videoCallRequest", (request) => {
+      clearTimeout(incomingTimerRef.current);
+      setIncomingCall(request);
+      incomingTimerRef.current = setTimeout(() => setIncomingCall(null), 60000);
+    });
+
+    // Khi đối phương bấm chấp nhận cuộc gọi -> Bên gọi (Caller) bắt đầu khởi tạo PeerConnection và gửi Offer
+    register("callAccepted", ({ from, video, callId }) => {
+      if (callIdRef.current && callIdRef.current !== callId) return;
+      clearTimeout(ringTimerRef.current);
+      callIdRef.current = callId;
+      setReceiverId(from);
+      receiverIdRef.current = from;
+      setIsMobileConversationOpen(true);
+      setCalling(false);
+      setIsCallModalVisible(true);
+      initializePeerConnection(video, true);
+    });
+
+    register("callRejected", ({ callId }) => {
+      if (callIdRef.current !== callId) return;
+      clearTimeout(ringTimerRef.current);
+      callIdRef.current = null;
+      toast("Cuộc gọi đã bị từ chối.", "info");
+      setCalling(false);
+    });
+
+    register("callEnded", ({ callId }) => {
+      if (callIdRef.current !== callId) return;
+      clearTimeout(ringTimerRef.current);
+      clearTimeout(incomingTimerRef.current);
+      callIdRef.current = null;
+      setIsCallModalVisible(false);
+      setCalling(false);
+      closePeerConnection();
+      stopLocalMedia();
+      setCallHasVideo(false);
+      toast("Cuộc gọi đã kết thúc.", "info");
+    });
+
+    register("offer", async ({ offer }) => {
+      const activePeerConnection = peerConnectionRef.current;
+      if (!activePeerConnection) return;
+
+      try {
+        if (activePeerConnection.signalingState === "stable") {
+          await activePeerConnection.setRemoteDescription(
+            new RTCSessionDescription(offer),
+          );
+
+          await flushIceCandidateQueue(activePeerConnection);
+
+          const answer = await activePeerConnection.createAnswer();
+          await activePeerConnection.setLocalDescription(answer);
+          socket.emit("answer", {
+            answer,
+            to: receiverIdRef.current,
+            callId: callIdRef.current,
+          });
+        } else {
+          console.warn(
+            "Bỏ qua offer vì peer connection không ở trạng thái stable:",
+            activePeerConnection.signalingState,
+          );
+        }
+      } catch (error) {
+        console.error("Could not accept the call offer", error);
+        toast("Không thể thiết lập cuộc gọi.", "error");
+      }
+    });
+
+    register("answer", async ({ answer }) => {
+      const activePeerConnection = peerConnectionRef.current;
+      if (!activePeerConnection) return;
+
+      try {
+        if (activePeerConnection.signalingState === "have-local-offer") {
+          await activePeerConnection.setRemoteDescription(
+            new RTCSessionDescription(answer),
+          );
+
+          await flushIceCandidateQueue(activePeerConnection);
+        } else {
+          console.warn(
+            "Bỏ qua answer vì peer connection đang ở trạng thái:",
+            activePeerConnection.signalingState,
+          );
+        }
+      } catch (error) {
+        console.error("Could not apply the call answer", error);
+        toast("Không thể thiết lập cuộc gọi.", "error");
+      }
+    });
+
+    register("ice-candidate", async (candidate) => {
+      const activePeerConnection = peerConnectionRef.current;
+      if (!activePeerConnection || !candidate.iceCandidate) return;
+      await addIceCandidateSafely(activePeerConnection, candidate.iceCandidate);
+    });
+
+    return () => {
+      clearTimeout(ringTimerRef.current);
+      clearTimeout(incomingTimerRef.current);
+      closePeerConnection();
+      stopLocalMedia();
+      listeners.forEach(([event, handler]) => socket.off(event, handler));
+    };
+  }, [
+    addIceCandidateSafely,
+    closePeerConnection,
+    flushIceCandidateQueue,
+    initializePeerConnection,
+    peerConnectionRef,
+    socket,
+    stopLocalMedia,
+    toast,
+  ]);
+
+  useEffect(() => {
+    if (!isCallModalVisible) return undefined;
+    const timer = setInterval(() => {
+      if (!callIdRef.current) return;
+      socket.emit("callHeartbeat", { callId: callIdRef.current }, (reply) => {
+        if (reply?.ok) return;
+        callIdRef.current = null;
+        closePeerConnection();
+        stopLocalMedia();
+        setIsCallModalVisible(false);
+        toast("Kết nối cuộc gọi đã kết thúc.", "error");
+      });
+    }, 20000);
+    return () => clearInterval(timer);
+  }, [closePeerConnection, isCallModalVisible, socket, stopLocalMedia, toast]);
+
+  const sendMessage = () => {
+    const text = message.trim();
+    if (
+      text &&
+      hasValidReceiver &&
+      hasValidConversationId &&
+      !sendMessageMutation.isPending
+    ) {
+      sendMessageMutation.mutate({
+        receiverId: normalizedReceiverId,
+        conversationId,
+        message: text,
+      });
+      setDrafts((current) => ({ ...current, [draftKey]: "" }));
+    }
+  };
+
+  const handleMessageKeyDown = (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      sendMessage();
+    }
+  };
+
+  const requestCall = (video) => {
+    if (!socket.connected) {
+      toast("Đang kết nối lại. Vui lòng thử gọi sau.", "info");
+      return;
+    }
+    clearTimeout(ringTimerRef.current);
+    ringTimerRef.current = setTimeout(() => {
+      if (callIdRef.current)
+        socket.emit("callEnded", { to: receiverId, callId: callIdRef.current });
+      callIdRef.current = null;
+      setCalling(false);
+      toast("Không có phản hồi từ người nhận.", "info");
+    }, 60000);
+    socket.emit(
+      "videoCallRequest",
+      {
+        to: receiverId,
+        video,
+      },
+      (result) => {
+        if (result?.ok) callIdRef.current = result.callId;
+        else {
+          clearTimeout(ringTimerRef.current);
+          setCalling(false);
+          toast("Không thể bắt đầu cuộc gọi.", "error");
+        }
+      },
+    );
+    setCalling(true);
+  };
+
+  const handleCallCancel = () => {
+    clearTimeout(ringTimerRef.current);
+    setIsCallModalVisible(false);
+    closePeerConnection();
+    stopLocalMedia();
+    setCallHasVideo(false);
+    if (callIdRef.current)
+      socket.emit("callEnded", { to: receiverId, callId: callIdRef.current });
+    callIdRef.current = null;
+  };
+
+  const handleCallingCancel = () => {
+    clearTimeout(ringTimerRef.current);
+    if (callIdRef.current)
+      socket.emit("callEnded", { to: receiverId, callId: callIdRef.current });
+    callIdRef.current = null;
+    closePeerConnection();
+    stopLocalMedia();
+    setCalling(false);
+    setIsCallModalVisible(false);
+    setCallHasVideo(false);
+  };
+
+  const acceptIncomingCall = () => {
+    if (!incomingCall) return;
+    clearTimeout(incomingTimerRef.current);
+    handleAcceptCall(
+      incomingCall.from,
+      incomingCall.video,
+      incomingCall.callId,
+    );
+    setIncomingCall(null);
+  };
+
+  const rejectIncomingCall = () => {
+    if (incomingCall) {
+      clearTimeout(incomingTimerRef.current);
+      socket.emit("callRejected", {
+        to: incomingCall.from,
+        callId: incomingCall.callId,
+      });
+      setIncomingCall(null);
+    }
+  };
+
+  return (
+    <main className="h-full min-h-0 bg-canvas text-ink">
+      <div className="mx-auto grid h-full min-h-0 max-w-[1600px] grid-cols-1 grid-rows-1 gap-0 lg:grid-cols-[21rem_minmax(0,1fr)] lg:gap-5 lg:p-5 xl:p-7">
+        <ChatSidebar
+          isMobileConversationOpen={isMobileConversationOpen}
+          isSocketConnected={isSocketConnected}
+          onSelectUser={(userId) => {
+            setReceiverId(userId);
+            setIsMobileConversationOpen(true);
+          }}
+          unreadCountByPeer={unreadCountByPeer}
+          unreadSummaryQuery={unreadSummaryQuery}
+          user={user}
+          userList={userList}
+          userListQuery={userListQuery}
+          selectedUserId={normalizedReceiverId}
+        />
+
+        <ChatConversation
+          currentUserId={currentUserId}
+          directConversationQuery={directConversationQuery}
+          hasValidConversationId={hasValidConversationId}
+          hasValidReceiver={hasValidReceiver}
+          isMobileConversationOpen={isMobileConversationOpen}
+          isSocketConnected={isSocketConnected}
+          latestSeenMessageId={latestSeenMessageId}
+          loadOlderMessages={loadOlderMessages}
+          message={message}
+          messageGroups={messageGroups}
+          messageListRef={messageListRef}
+          messages={messages}
+          messagesQuery={messagesQuery}
+          onBack={() => setIsMobileConversationOpen(false)}
+          onMessageChange={(event) =>
+            setDrafts((current) => ({
+              ...current,
+              [draftKey]: event.target.value,
+            }))
+          }
+          onMessageKeyDown={handleMessageKeyDown}
+          onMessageListScroll={handleMessageListScroll}
+          onRequestCall={requestCall}
+          onSendMessage={sendMessage}
+          selectedUser={selectedUser}
+          selectedUserName={selectedUserName}
+          sendMessageMutation={sendMessageMutation}
+        />
+      </div>
+
+      <CallDialogs
+        acceptIncomingCall={acceptIncomingCall}
+        callHasVideo={callHasVideo}
+        calling={calling}
+        handleCallCancel={handleCallCancel}
+        handleCallingCancel={handleCallingCancel}
+        incomingCall={incomingCall}
+        isCallModalVisible={isCallModalVisible}
+        localVideoRef={localVideoRef}
+        rejectIncomingCall={rejectIncomingCall}
+        remoteAudioRef={remoteAudioRef}
+        remoteVideoRef={remoteVideoRef}
+        selectedUserName={selectedUserName}
+      />
+    </main>
+  );
+};
+
+export default Chat;

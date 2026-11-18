@@ -86,13 +86,14 @@ Kafka events contain identifiers rather than message bodies. Consumers load the 
 
 The authenticated conversation API exposes unread counts per peer and accepts a `upToMessageId` cursor to mark messages read. The cursor must belong to the conversation, and receipt writes are idempotent. Existing messages are backfilled as read for current participants during migration because their historical read state is unknown. The chat marks a cursor after its message becomes sufficiently visible, displays unread badges beside contacts, and shows “Đã xem” for the latest outgoing message the other participant has read. Group-chat UI is not included.
 
-- `GET /api/v1/users` lists users available to the authenticated user; `GET /api/v1/users/me` returns the current user.
+- `GET /api/v1/users` lists users available to the authenticated user with a current `isOnline` flag; `GET /api/v1/users/me` returns the current user.
 - `GET /api/v1/messages?receiverId={userId}` lists direct messages; `POST /api/v1/messages` creates one.
 - `PUT /api/v1/conversations/direct/:otherUserId` gets or creates the current user's direct conversation.
 - `GET /api/v1/conversations/unread-summary` returns the authenticated user's unread counts.
 - `GET` and `POST /api/v1/conversations/:conversationId/messages` list and create conversation messages.
 - `PUT /api/v1/conversations/:conversationId/read-receipt` accepts `{ "upToMessageId": 123 }`.
 - Socket.IO emits `conversationRead` to the other conversation participants after a read update.
+- Socket.IO emits `presenceChanged` with `{ userId, isOnline }` when a user gains their first connection or loses their last one. The chat refreshes presence after reconnecting.
 
 Admin accounts can set `isActive` with `PATCH /api/v1/admin/users/:userId/status` and `{ "isActive": false }`; inactive accounts cannot log in, refresh, use authenticated APIs, or connect via Socket.IO. Calls carry a server-issued `callId` on every signaling event, and the server authorizes both participants against the Redis call session.
 
@@ -101,6 +102,12 @@ Message times use the browser's local time in `HH:mm` format. Messages are group
 The client uses TanStack Query to cache chat and admin responses in browser memory. Chat history uses 30-message pages and loads earlier messages when scrolling to the top while preserving the visible scroll position. Queries are considered fresh for up to 30 seconds by default and unused data is garbage-collected after five minutes. Logging out clears the client query cache.
 
 ## Local Development
+
+### Client structure
+
+The React client is organized by product feature under `client/src/features`: `auth` owns sign-in, registration, and the auth store; `chat` owns conversations, messaging, read receipts, and call media; `admin` owns user and audit views. Shared HTTP configuration, query keys, layout, and reusable controls live under `client/src/shared`. Keep server payload conversion in feature API or view-model modules rather than presentational components. The visual rules and semantic tokens are documented in `client/DESIGN.md`.
+
+Run `npm --prefix client test -- --watchAll=false` and `npm --prefix client run build` after client changes. The root pre-commit hook runs the full server/client validation gate.
 
 The infrastructure can be started with Docker while running the client and server directly. Put `DB_HOST=localhost`, `DB_PORT=1433`, `DB_USER=sa`, `DB_PASSWORD`, `DB_NAME=ChatDb`, `KAFKA_BROKERS=localhost:29092`, and a random `JWT_ACCESS_SECRET` of at least 32 bytes in the root `.env` file. For local HTTP, use `COOKIE_SECURE=false`. Start the database, Redis, and Kafka with `docker compose up -d db redis kafka`, then run:
 

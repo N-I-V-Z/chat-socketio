@@ -1,0 +1,154 @@
+import { cn } from "../../../shared/ui/cn";
+
+function ChatSidebar({
+  isMobileConversationOpen,
+  isSocketConnected,
+  onSelectUser,
+  unreadCountByPeer,
+  unreadSummaryQuery,
+  user,
+  userList,
+  userListQuery,
+  selectedUserId,
+}) {
+  return (
+    <aside
+      aria-label="Danh sách liên hệ"
+      className={cn(
+        "min-h-0 flex-col overflow-hidden border-line bg-surface lg:rounded-panel lg:border lg:shadow-panel",
+        isMobileConversationOpen ? "hidden lg:flex" : "flex",
+      )}
+    >
+      <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-6 lg:px-6 lg:py-7">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-accent">
+            Không gian của bạn
+          </p>
+          <h1 className="mt-2 text-2xl font-bold tracking-[-0.045em]">
+            Trò chuyện
+          </h1>
+        </div>
+        <span className="grid size-11 shrink-0 place-items-center rounded-full bg-accent/10 text-sm font-bold text-accent ring-1 ring-accent/10">
+          {user?.userName?.slice(0, 1)?.toLocaleUpperCase() || "?"}
+        </span>
+      </div>
+
+      <div className="flex items-center justify-between px-5 pb-3 pt-6 lg:px-6">
+        <h2 className="text-sm font-bold tracking-[-0.02em]">Liên hệ</h2>
+        {!userListQuery.isPending && (
+          <span className="rounded-full bg-surface-muted px-2.5 py-1 text-xs font-semibold tabular-nums text-muted">
+            {userList.length}
+          </span>
+        )}
+      </div>
+      <ul
+        aria-label="Danh sách người dùng"
+        className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-3 pb-5 lg:px-4"
+      >
+        {userListQuery.isPending && (
+          <li className="space-y-2 px-2 py-3" role="status">
+            <span className="block h-11 animate-pulse rounded-xl bg-surface-muted motion-reduce:animate-none" />
+            <span className="block h-11 animate-pulse rounded-xl bg-surface-muted motion-reduce:animate-none" />
+            <span className="sr-only">Đang tải danh sách người dùng</span>
+          </li>
+        )}
+        {userListQuery.isError && (
+          <li className="px-2 py-3 text-sm text-danger" role="alert">
+            <p>Không thể tải danh sách người dùng.</p>
+            <button
+              type="button"
+              onClick={() => userListQuery.refetch()}
+              className="mt-2 font-semibold underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              Thử lại
+            </button>
+          </li>
+        )}
+        {userList.map((listedUser) => {
+          const isSelected = Number(listedUser.userId) === selectedUserId;
+          const isOnline = isSocketConnected && listedUser.isOnline === true;
+          const presenceLabel = !isSocketConnected
+            ? "Trạng thái chưa khả dụng"
+            : isOnline
+              ? "Đang hoạt động"
+              : "Không hoạt động";
+          const unreadCount =
+            unreadCountByPeer.get(Number(listedUser.userId)) || 0;
+          return (
+            <li key={listedUser.userId}>
+              <button
+                type="button"
+                aria-current={isSelected ? "true" : undefined}
+                aria-describedby={`contact-presence-${listedUser.userId}`}
+                onClick={() => onSelectUser(listedUser.userId)}
+                className={[
+                  "flex min-h-16 w-full items-center gap-3 rounded-xl px-3 py-2 text-left",
+                  "transition duration-200 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                  isSelected
+                    ? "bg-accent/10 text-accent ring-1 ring-accent/10"
+                    : "text-ink",
+                ].join(" ")}
+              >
+                <span
+                  aria-hidden="true"
+                  className={[
+                    "relative grid size-10 shrink-0 place-items-center rounded-full text-sm font-bold",
+                    isSelected
+                      ? "bg-accent text-accent-foreground"
+                      : "bg-surface-muted text-muted",
+                  ].join(" ")}
+                >
+                  {listedUser.userName?.slice(0, 1)?.toLocaleUpperCase() || "?"}
+                  <span
+                    className={cn(
+                      "absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-surface",
+                      isOnline ? "bg-success" : "bg-muted/65",
+                    )}
+                  />
+                </span>
+                <span className="truncate text-sm font-semibold">
+                  {listedUser.userName}
+                </span>
+                {unreadCount > 0 && (
+                  <span
+                    aria-label={`${unreadCount} tin nhắn chưa đọc`}
+                    className="ml-auto grid min-w-6 place-items-center rounded-full bg-accent px-2 py-0.5 text-xs font-bold tabular-nums text-accent-foreground"
+                  >
+                    {unreadCount > 99 ? "99+" : unreadCount}
+                  </span>
+                )}
+              </button>
+              <span
+                id={`contact-presence-${listedUser.userId}`}
+                className="sr-only"
+              >
+                {presenceLabel}
+              </span>
+            </li>
+          );
+        })}
+        {unreadSummaryQuery.isError && (
+          <li className="px-2 py-3 text-sm text-danger" role="alert">
+            <p>Không thể tải số tin nhắn chưa đọc.</p>
+            <button
+              type="button"
+              onClick={() => unreadSummaryQuery.refetch()}
+              className="mt-2 font-semibold underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              Thử lại
+            </button>
+          </li>
+        )}
+        {!userListQuery.isPending &&
+          !userListQuery.isError &&
+          userList.length === 0 && (
+            <li className="px-2 py-3 text-sm text-muted">
+              Chưa có người dùng khác.
+            </li>
+          )}
+      </ul>
+    </aside>
+  );
+}
+
+export default ChatSidebar;
