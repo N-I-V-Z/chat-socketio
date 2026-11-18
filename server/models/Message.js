@@ -42,7 +42,7 @@ module.exports = function (sequelize, DataTypes) {
       sequelize,
       tableName: "Message",
       schema: "dbo",
-      timestamps: false,
+      timestamps: true,
       indexes: [
         {
           name: "PK__Message__C87C0C9CE1B8AE90",

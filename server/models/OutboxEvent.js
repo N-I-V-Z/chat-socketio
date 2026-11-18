@@ -50,7 +50,7 @@ module.exports = function (sequelize, DataTypes) {
       sequelize,
       tableName: "OutboxEvents",
       schema: "dbo",
-      timestamps: false,
+      timestamps: true,
       indexes: [
         {
           name: "IX_OutboxEvents_PublishedAt_NextAttemptAt_ClaimedUntil_CreatedAt",

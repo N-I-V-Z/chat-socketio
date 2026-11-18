@@ -41,7 +41,7 @@ module.exports = function (sequelize, DataTypes) {
     {
       tableName: "AuditLogs",
       schema: "dbo",
-      timestamps: false,
+      timestamps: true,
       indexes: [
         { name: "IX_AuditLogs_occurredAt", fields: ["occurredAt"] },
         { name: "IX_AuditLogs_eventType", fields: ["eventType"] },

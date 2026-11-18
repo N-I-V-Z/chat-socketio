@@ -36,7 +36,7 @@ module.exports = function (sequelize, DataTypes) {
       sequelize,
       tableName: "Users",
       schema: "dbo",
-      timestamps: false,
+      timestamps: true,
       indexes: [
         {
           name: "PK__Users__CB9A1CFFF9B02A89",

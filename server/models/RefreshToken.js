@@ -45,7 +45,7 @@ module.exports = function (sequelize, DataTypes) {
     {
       tableName: "RefreshTokens",
       schema: "dbo",
-      timestamps: false,
+      timestamps: true,
     },
   );
 };

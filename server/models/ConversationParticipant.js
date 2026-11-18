@@ -36,7 +36,7 @@ module.exports = function (sequelize, DataTypes) {
       sequelize,
       tableName: "ConversationParticipants",
       schema: "dbo",
-      timestamps: false,
+      timestamps: true,
     },
   );
 };

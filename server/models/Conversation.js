@@ -26,7 +26,7 @@ module.exports = function (sequelize, DataTypes) {
       sequelize,
       tableName: "Conversations",
       schema: "dbo",
-      timestamps: false,
+      timestamps: true,
     },
   );
 };
