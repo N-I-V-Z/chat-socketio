@@ -333,9 +333,12 @@ test("sends through the conversation API and keeps one composer focus ring", asy
   fireEvent.click(await screen.findByRole("button", { name: "member" }));
 
   const textarea = await screen.findByLabelText("Tin nhắn mới");
-  const sendButton = screen.getByRole("button", { name: "Gửi" });
+  const sendButton = screen.getByRole("button", { name: "Gửi tin nhắn" });
   await screen.findByText("Tin nhắn của tôi");
   expect(textarea).toHaveClass("focus-visible:ring-0");
+  fireEvent.pointerDown(textarea.closest("label"));
+  fireEvent.click(textarea.closest("label"));
+  expect(textarea).toHaveFocus();
   fireEvent.change(textarea, { target: { value: "Hello" } });
   await waitFor(() => expect(sendButton).toBeEnabled());
   fireEvent.click(sendButton);
@@ -420,7 +423,7 @@ test("restores a failed message to the original recipient", async () => {
   fireEvent.change(screen.getByLabelText("Tin nhắn mới"), {
     target: { value: "Thử lại" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Gửi" }));
+  fireEvent.click(screen.getByRole("button", { name: "Gửi tin nhắn" }));
   await waitFor(() =>
     expect(screen.getByLabelText("Tin nhắn mới")).toHaveValue("Thử lại"),
   );
