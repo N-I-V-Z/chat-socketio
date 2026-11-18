@@ -4,14 +4,14 @@
 
 :root {
   color-scheme: light;
-  --color-canvas: 247 248 250;
+  --color-canvas: 246 247 248;
   --color-surface: 255 255 255;
-  --color-surface-muted: 241 243 246;
-  --color-ink: 37 43 51;
-  --color-muted: 105 116 129;
-  --color-line: 225 229 234;
-  --color-accent: 79 111 146;
-  --color-accent-hover: 64 95 128;
+  --color-surface-muted: 237 241 243;
+  --color-ink: 27 39 48;
+  --color-muted: 88 101 111;
+  --color-line: 218 225 229;
+  --color-accent: 43 82 105;
+  --color-accent-hover: 32 66 87;
   --color-accent-foreground: 255 255 255;
   --color-danger: 177 61 58;
   --color-success: 37 121 84;
@@ -31,6 +31,7 @@
   body {
     @apply min-h-[100dvh] bg-canvas font-sans text-ink antialiased;
     font-feature-settings: "cv11", "ss01";
+    text-rendering: optimizeLegibility;
   }
 
   button,
@@ -46,6 +47,17 @@
 
   ::selection {
     @apply bg-accent/20 text-ink;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    border: 3px solid rgb(var(--color-surface));
+    border-radius: 999px;
+    background: rgb(var(--color-muted) / 0.36);
   }
 }
 

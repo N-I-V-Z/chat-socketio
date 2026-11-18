@@ -16,15 +16,15 @@ function Dialog({
         <DialogPrimitive.Content
           className={[
             "fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-lg",
-            "-translate-x-1/2 -translate-y-1/2 rounded-panel border border-line",
-            "bg-surface p-6 text-ink shadow-panel outline-none sm:p-8",
+            "max-h-[calc(100dvh-2rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-panel border border-line",
+            "bg-surface p-6 text-ink shadow-float outline-none sm:p-8",
             "data-[state=open]:animate-fade-in",
             className,
           ].join(" ")}
         >
           <header className="mb-6 flex items-start justify-between gap-4">
             <div className="grid gap-2">
-              <DialogPrimitive.Title className="text-xl font-bold tracking-tight">
+              <DialogPrimitive.Title className="text-xl font-bold tracking-[-0.03em]">
                 {title}
               </DialogPrimitive.Title>
               {description && (

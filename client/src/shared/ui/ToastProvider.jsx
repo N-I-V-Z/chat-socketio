@@ -43,7 +43,7 @@ function ToastProvider({ children }) {
   return (
     <ToastContext.Provider value={toast}>
       {children}
-      <div className="pointer-events-none fixed right-4 top-4 z-[70] grid w-[min(24rem,calc(100vw-2rem))] gap-3">
+      <div className="pointer-events-none fixed right-4 top-[calc(1rem+env(safe-area-inset-top))] z-[70] grid w-[min(24rem,calc(100vw-2rem))] gap-3">
         {toasts.map(({ id, content, variant }) => (
           <div
             key={id}

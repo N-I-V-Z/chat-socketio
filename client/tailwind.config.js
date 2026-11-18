@@ -23,11 +23,11 @@ module.exports = {
         sans: ["Manrope", "ui-sans-serif", "system-ui", "sans-serif"],
       },
       boxShadow: {
-        panel: "0 24px 60px -42px rgb(31 41 55 / 0.38)",
-        float: "0 14px 36px -24px rgb(31 41 55 / 0.4)",
+        panel: "0 18px 54px -38px rgb(27 39 48 / 0.3)",
+        float: "0 16px 42px -28px rgb(27 39 48 / 0.34)",
       },
       borderRadius: {
-        panel: "1.25rem",
+        panel: "1rem",
       },
       transitionTimingFunction: {
         premium: "cubic-bezier(0.2, 0.8, 0.2, 1)",

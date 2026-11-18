@@ -18,10 +18,10 @@ function TextField({ id, label, hint, error, className = "", ...inputProps }) {
         aria-describedby={describedBy || undefined}
         aria-invalid={error ? true : undefined}
         className={[
-          "min-h-12 w-full rounded-xl border border-line bg-surface px-4 py-3",
+          "min-h-12 w-full rounded-[0.625rem] border border-line bg-surface px-4 py-3",
           "text-sm text-ink placeholder:text-muted/80",
           "transition duration-200 ease-premium",
-          "focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20",
+          "focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25",
           error ? "border-danger focus:border-danger focus:ring-danger/20" : "",
         ]
           .filter(Boolean)
