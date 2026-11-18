@@ -4,12 +4,12 @@ import "@testing-library/jest-dom";
 import { configureStore } from "@reduxjs/toolkit";
 import { Provider } from "react-redux";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import api, { refreshAccessToken } from "./api/client";
-import rootReducer from "./component/store/reduces/rootReducer";
-import { ToastProvider } from "./component/ui/ToastProvider";
+import api, { refreshAccessToken } from "./shared/api/client";
+import rootReducer from "./features/auth/store/reduces/rootReducer";
+import { ToastProvider } from "./shared/ui/ToastProvider";
 import App from "./App";
 
-jest.mock("./api/client", () => ({
+jest.mock("./shared/api/client", () => ({
   __esModule: true,
   default: {
     post: jest.fn(),
@@ -18,7 +18,7 @@ jest.mock("./api/client", () => ({
   refreshAccessToken: jest.fn(),
 }));
 
-jest.mock("./component/auth/Login", () => {
+jest.mock("./features/auth/Login", () => {
   const React = jest.requireActual("react");
   return {
     __esModule: true,
@@ -26,7 +26,7 @@ jest.mock("./component/auth/Login", () => {
   };
 });
 
-jest.mock("./component/auth/Register", () => {
+jest.mock("./features/auth/Register", () => {
   const React = jest.requireActual("react");
   return {
     __esModule: true,
@@ -34,7 +34,7 @@ jest.mock("./component/auth/Register", () => {
   };
 });
 
-jest.mock("./component/chat/Chat", () => {
+jest.mock("./features/chat/Chat", () => {
   const React = jest.requireActual("react");
   return {
     __esModule: true,
@@ -42,7 +42,7 @@ jest.mock("./component/chat/Chat", () => {
   };
 });
 
-jest.mock("./component/admin/AdminDashboard", () => {
+jest.mock("./features/admin/AdminDashboard", () => {
   const React = jest.requireActual("react");
   return {
     __esModule: true,
@@ -50,7 +50,7 @@ jest.mock("./component/admin/AdminDashboard", () => {
   };
 });
 
-jest.mock("./component/ui/Dialog", () => {
+jest.mock("./shared/ui/Dialog", () => {
   const React = jest.requireActual("react");
   return {
     __esModule: true,

@@ -8,13 +8,13 @@ import {
 } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { useQueryClient } from "@tanstack/react-query";
-import Login from "./component/auth/Login";
-import Register from "./component/auth/Register";
-import Chat from "./component/chat/Chat";
-import AdminDashboard from "./component/admin/AdminDashboard";
-import AuthenticatedLayout from "./component/layout/AuthenticatedLayout";
-import { login, logout } from "./component/store/actions/authAction";
-import { clearAccessToken, refreshAccessToken } from "./api/client";
+import Login from "./features/auth/Login";
+import Register from "./features/auth/Register";
+import Chat from "./features/chat/Chat";
+import AdminDashboard from "./features/admin/AdminDashboard";
+import AuthenticatedLayout from "./shared/layout/AuthenticatedLayout";
+import { login, logout } from "./features/auth/store/actions/authAction";
+import { clearAccessToken, refreshAccessToken } from "./shared/api/client";
 
 function AppRoutes() {
   const dispatch = useDispatch();

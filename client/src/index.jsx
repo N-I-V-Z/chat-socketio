@@ -8,7 +8,7 @@ import { Provider } from "react-redux";
 import reduxStore from "./redux";
 import { QueryClientProvider } from "@tanstack/react-query";
 import queryClient from "./queryClient";
-import { ToastProvider } from "./component/ui/ToastProvider";
+import { ToastProvider } from "./shared/ui/ToastProvider";
 
 const store = reduxStore();
 
