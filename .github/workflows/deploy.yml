@@ -2,7 +2,7 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
   build-and-deploy:
@@ -18,7 +18,7 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      # 1. BUILD & PUSH CLIENT (Truyền biến môi trường lúc build bằng build-args)
+      # 1. BUILD & PUSH CLIENT
       - name: Build and push Client Docker image
         run: |
           docker build --pull --no-cache \
@@ -33,7 +33,7 @@ jobs:
           docker build --pull --no-cache -t nivz0911/chat-socketio-server:latest ./server
           docker push nivz0911/chat-socketio-server:latest
 
-      # 3. DEPLOY LÊN VPS VÀ TỰ ĐỘNG TẠO FILE .ENV TỪ GITHUB SECRETS
+      # 3. DEPLOY LÊN VPS (ĐÃ SỬA LỖI XÁC THỰC PUBLICKEY)
       - name: Deploy to VPS via SSH
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
@@ -41,7 +41,6 @@ jobs:
           VPS_USERNAME: ${{ secrets.VPS_USERNAME }}
           DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
           DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
-          # Đưa các secrets vào biến môi trường của runner để truyền sang VPS
           MSSQL_SA_PASSWORD: ${{ secrets.MSSQL_SA_PASSWORD }}
           JWT_ACCESS_SECRET: ${{ secrets.JWT_ACCESS_SECRET }}
           COOKIE_SECURE: ${{ secrets.COOKIE_SECURE }}
@@ -52,7 +51,7 @@ jobs:
           # Đăng nhập Docker Hub trên VPS
           echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
 
-          # Đi đúng vào thư mục dự án trên VPS của bạn
+          # Đi đúng vào thư mục dự án trên VPS
           cd ~/apps/chat-app || exit 1
 
           # TỰ ĐỘNG TẠO FILE .ENV TRÊN VPS TỪ CÁC BIẾN GITHUB SECRETS
@@ -64,13 +63,18 @@ jobs:
           CLIENT_URL=$CLIENT_URL
           EOT
 
-          # Kéo các image mới nhất về và khởi động lại toàn bộ stack qua docker compose
+          # Kéo image mới và deploy qua docker compose
           docker compose pull
           docker compose up -d --force-recreate
 
-          # Dọn dẹp rác image cũ không dùng đến
+          # Dọn dẹp rác image cũ
           docker image prune -f
           EOF
 
-          # Gửi script sang VPS chạy
-          ssh -o StrictHostKeyChecking=no -p $VPS_PORT $VPS_USERNAME@$VPS_HOST 'bash -s' < deploy_script.sh
+          # Thêm các cờ '-o PubkeyAuthentication=no -o PasswordAuthentication=no' 
+          # để ép SSH không đi tìm key hay password, kết nối trực tiếp bằng user không mật khẩu.
+          ssh -o StrictHostKeyChecking=no \
+              -o PubkeyAuthentication=no \
+              -o PasswordAuthentication=no \
+              -p $VPS_PORT \
+              $VPS_USERNAME@$VPS_HOST 'bash -s' < deploy_script.sh
