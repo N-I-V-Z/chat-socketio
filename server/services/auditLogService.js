@@ -1,5 +1,6 @@
 const { Op } = require("sequelize");
 const db = require("../models");
+const redisConnection = require("./redisConnection");
 
 const RETENTION_DAYS = 30;
 const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -55,13 +56,32 @@ async function pruneExpiredLogs(now = new Date()) {
 }
 
 function startRetentionCleanup() {
-  const cleanup = () => {
-    pruneExpiredLogs().catch((error) => {
+  const cleanup = async () => {
+    try {
+      const redis = redisConnection.getClient();
+      if (!redis?.isReady) return;
+      const lease = await redis.set("audit:retention:lease", "1", {
+        NX: true,
+        EX: 600,
+      });
+      if (!lease) return;
+      const cutoff = new Date(
+        Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000,
+      );
+      for (let batch = 0; batch < 10; batch++) {
+        const [rows] = await db.sequelize.query(
+          "DELETE TOP (1000) FROM [dbo].[AuditLogs] WHERE [occurredAt] < :cutoff; SELECT @@ROWCOUNT AS deleted;",
+          { replacements: { cutoff } },
+        );
+        const deleted = Number(rows?.[0]?.deleted ?? 0);
+        if (deleted < 1000) break;
+      }
+    } catch (error) {
       console.error("Audit log retention cleanup failed:", error);
-    });
+    }
   };
 
-  cleanup();
+  void cleanup();
   const timer = setInterval(cleanup, CLEANUP_INTERVAL_MS);
   timer.unref();
   return () => clearInterval(timer);

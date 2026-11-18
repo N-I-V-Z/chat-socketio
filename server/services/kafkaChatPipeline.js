@@ -2,6 +2,7 @@ const { Kafka } = require("kafkajs");
 const { QueryTypes } = require("sequelize");
 const OUTBOX_EVENT_TYPES = require("../constants/outboxEventTypes");
 const { userRoom, parseUserId } = require("../utils/chatUtils"); //[cite: 6]
+const redisConnection = require("./redisConnection");
 
 const CHAT_EVENTS_TOPIC = "chat.events";
 const OUTBOX_BATCH_SIZE = 25;
@@ -171,6 +172,10 @@ function createChatEventPipeline({
       return;
     }
 
+    const dedupClient = redisConnection.getClient();
+    const dedupKey = `kafka:consumed:${event.eventId}`;
+    if (dedupClient?.isReady && (await dedupClient.get(dedupKey))) return;
+
     const message = await db.Message.findByPk(messageId, {
       attributes: [
         "MessageId",
@@ -217,6 +222,8 @@ function createChatEventPipeline({
     for (const userId of targetUserIds) {
       io.to(userRoom(userId)).emit("receiveMessage", messageEvent);
     }
+    if (dedupClient?.isReady)
+      await dedupClient.set(dedupKey, "1", { EX: 86400 });
   }
 
   async function ensureKafkaConnected() {

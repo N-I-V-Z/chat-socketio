@@ -6,6 +6,7 @@ const presenceService = require("../services/presenceService");
 
 test("admin user listing exposes safe fields and current socket presence", async () => {
   const originalFindAll = db.Users.findAll;
+  const originalGetOnline = presenceService.getOnlineUserIds;
   let queryOptions;
   db.Users.findAll = async (options) => {
     queryOptions = options;
@@ -14,7 +15,7 @@ test("admin user listing exposes safe fields and current socket presence", async
       { userId: 2, userName: "member", role: "user", password: "hash" },
     ];
   };
-  presenceService.connect(2, "socket-2");
+  presenceService.getOnlineUserIds = async () => new Set([2]);
 
   try {
     const users = await adminService.getUsers();
@@ -42,7 +43,7 @@ test("admin user listing exposes safe fields and current socket presence", async
     ]);
     assert.equal(JSON.stringify(users).includes("password"), false);
   } finally {
-    presenceService.disconnect(2, "socket-2");
+    presenceService.getOnlineUserIds = originalGetOnline;
     db.Users.findAll = originalFindAll;
   }
 });
