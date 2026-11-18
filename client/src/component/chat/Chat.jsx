@@ -210,22 +210,23 @@ const Chat = () => {
       ),
     [unreadSummaryQuery.data],
   );
+
   const latestSeenMessageId = useMemo(() => {
-    if (!hasValidReceiver) return null;
-    return (
-      messages.reduce((latestId, item) => {
-        if (
-          Number(item.senderId) !== currentUserId ||
-          !item.readReceipts.some(
-            (receipt) => Number(receipt.UserId) === normalizedReceiverId,
-          )
-        ) {
-          return latestId;
-        }
-        return Math.max(latestId, Number(item.MessageId) || 0);
-      }, 0) || null
-    );
+    if (!hasValidReceiver || messages.length === 0) return null;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const item = messages[i];
+      if (
+        Number(item.senderId) === currentUserId &&
+        item.readReceipts.some(
+          (receipt) => Number(receipt.UserId) === normalizedReceiverId,
+        )
+      ) {
+        return Number(item.MessageId) || 0;
+      }
+    }
+    return null;
   }, [currentUserId, hasValidReceiver, messages, normalizedReceiverId]);
+
   const messageGroups = useMemo(() => groupMessagesByDay(messages), [messages]);
   const selectedUser = userList.find(
     (listedUser) => Number(listedUser.userId) === normalizedReceiverId,
