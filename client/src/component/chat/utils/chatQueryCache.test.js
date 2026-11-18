@@ -1,4 +1,4 @@
-import { queryKeys } from "../../api/queryKeys";
+import { queryKeys } from "../../../api/queryKeys";
 import { appendSocketMessage, applyConversationRead } from "./chatQueryCache";
 
 function createQueryClient(initialKey, initialValue) {

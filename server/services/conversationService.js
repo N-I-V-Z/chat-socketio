@@ -1,12 +1,9 @@
 const db = require("../models");
 const httpError = require("../utils/httpError");
+const { parseUserId: baseParseUserId } = require("../utils/chatUtils"); //[cite: 7]
 
 function parseUserId(value) {
-  const userId = Number(value);
-  if (!Number.isSafeInteger(userId) || userId < 1) {
-    throw httpError(400, "INVALID_USER_ID", "A valid user ID is required");
-  }
-  return userId;
+  return baseParseUserId(value, httpError);
 }
 
 function getDirectPairKey(firstUserId, secondUserId) {

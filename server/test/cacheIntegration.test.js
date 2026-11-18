@@ -97,6 +97,7 @@ test("message history cache invalidates only after the write transaction commits
   const originalReadReceiptCreate = db.MessageReadReceipt.create;
   const originalOutboxEventCreate = db.OutboxEvent.create;
   const originalAuditCreate = db.AuditLog.create;
+  const originalParticipantFindAll = db.ConversationParticipant.findAll;
   const originalInvalidate = cacheService.invalidate;
   const originalGetOrCreateDirectConversation =
     conversationService.getOrCreateDirectConversation;
@@ -127,6 +128,11 @@ test("message history cache invalidates only after the write transaction commits
     assert.equal(options.transaction.id, "transaction");
     return values;
   };
+  db.ConversationParticipant.findAll = async (options) => {
+    assert.deepEqual(options.where, { conversationId: 33 });
+    assert.equal(options.transaction.id, "transaction");
+    return [{ userId: 7 }, { userId: 3 }];
+  };
   conversationService.getOrCreateDirectConversation = async (
     senderId,
     receiverId,
@@ -156,6 +162,7 @@ test("message history cache invalidates only after the write transaction commits
     db.MessageReadReceipt.create = originalReadReceiptCreate;
     db.OutboxEvent.create = originalOutboxEventCreate;
     db.AuditLog.create = originalAuditCreate;
+    db.ConversationParticipant.findAll = originalParticipantFindAll;
     cacheService.invalidate = originalInvalidate;
     conversationService.getOrCreateDirectConversation =
       originalGetOrCreateDirectConversation;

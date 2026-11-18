@@ -1,20 +1,12 @@
 const { Kafka } = require("kafkajs");
 const { QueryTypes } = require("sequelize");
 const OUTBOX_EVENT_TYPES = require("../constants/outboxEventTypes");
+const { userRoom, parseUserId } = require("../utils/chatUtils"); //[cite: 6]
 
 const CHAT_EVENTS_TOPIC = "chat.events";
 const OUTBOX_BATCH_SIZE = 25;
 const OUTBOX_LEASE_SECONDS = 30;
 const MAX_RETRY_DELAY_SECONDS = 300;
-
-function userRoom(userId) {
-  return `user:${userId}`;
-}
-
-function parseUserId(value) {
-  const userId = Number(value);
-  return Number.isSafeInteger(userId) && userId > 0 ? userId : null;
-}
 
 function errorCode(error) {
   const code = error?.code || error?.name || "UNKNOWN";
@@ -162,7 +154,11 @@ function createChatEventPipeline({
     const conversationId = parseUserId(event.conversationId);
     const senderId = parseUserId(event.senderId);
     const recipientUserIds = Array.isArray(event.recipientUserIds)
-      ? [...new Set(event.recipientUserIds.map(parseUserId).filter(Boolean))]
+      ? [
+          ...new Set(
+            event.recipientUserIds.map((id) => parseUserId(id)).filter(Boolean),
+          ),
+        ]
       : [];
     if (
       event.eventType !== OUTBOX_EVENT_TYPES.CHAT_MESSAGE_CREATED ||
