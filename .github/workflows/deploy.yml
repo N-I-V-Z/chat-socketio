@@ -33,12 +33,12 @@ jobs:
           docker build --pull --no-cache -t nivz0911/chat-socketio-server:latest ./server
           docker push nivz0911/chat-socketio-server:latest
 
-      # 3. DEPLOY LÊN VPS (ĐÃ SỬA LỖI XÁC THỰC PUBLICKEY)
+      # 3. DEPLOY LÊN VPS
       - name: Deploy to VPS via SSH
         env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_PORT: ${{ secrets.VPS_PORT }}
           VPS_USERNAME: ${{ secrets.VPS_USERNAME }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
           DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
           DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
           MSSQL_SA_PASSWORD: ${{ secrets.MSSQL_SA_PASSWORD }}
@@ -51,7 +51,7 @@ jobs:
           # Đăng nhập Docker Hub trên VPS
           echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
 
-          # Đi đúng vào thư mục dự án trên VPS
+          # Đi đúng vào thư mục dự án trên VPS của bạn
           cd ~/apps/chat-app || exit 1
 
           # TỰ ĐỘNG TẠO FILE .ENV TRÊN VPS TỪ CÁC BIẾN GITHUB SECRETS
@@ -71,8 +71,7 @@ jobs:
           docker image prune -f
           EOF
 
-          # Thêm các cờ '-o PubkeyAuthentication=no -o PasswordAuthentication=no' 
-          # để ép SSH không đi tìm key hay password, kết nối trực tiếp bằng user không mật khẩu.
+          # Thực thi SSH đúng chuẩn port 2222 và user token của VPS
           ssh -o StrictHostKeyChecking=no \
               -o PubkeyAuthentication=no \
               -o PasswordAuthentication=no \
