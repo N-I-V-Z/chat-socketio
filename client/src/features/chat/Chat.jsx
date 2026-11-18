@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useDispatch, useSelector } from "react-redux";
+import { useSelector } from "react-redux";
 import {
   useInfiniteQuery,
   useMutation,
@@ -14,13 +14,8 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import io from "socket.io-client";
-import { useNavigate } from "react-router-dom";
 import config from "../../shared/config/config";
-import {
-  clearAccessToken,
-  getAccessToken,
-  refreshAccessToken,
-} from "../../shared/api/client";
+import { getAccessToken } from "../../shared/api/client";
 import {
   getConversationMessages,
   getDirectConversation,
@@ -28,19 +23,16 @@ import {
   listChatUsers,
   sendConversationMessage,
 } from "./api";
-import { logout } from "../auth/store/actions/authAction";
 import { queryKeys } from "../../shared/api/queryKeys";
-import {
-  appendConversationMessage,
-  appendSocketMessage,
-  applyConversationRead,
-} from "./utils/chatQueryCache";
+import { appendConversationMessage } from "./utils/chatQueryCache";
 import { groupMessagesByDay } from "./utils/messageDateFormat";
 import ChatConversation from "./components/ChatConversation";
 import ChatSidebar from "./components/ChatSidebar";
 import CallDialogs from "./components/CallDialogs";
 import useReadReceipts from "./hooks/useReadReceipts";
 import useCallMedia from "./hooks/useCallMedia";
+import useChatSocketConnection from "./hooks/useChatSocketConnection";
+import useChatRealtimeMessages from "./hooks/useChatRealtimeMessages";
 import { useToast } from "../../shared/ui/ToastProvider";
 
 const EMPTY_MESSAGES = [];
@@ -48,8 +40,6 @@ const SCROLL_EDGE_PX = 72;
 const BOTTOM_THRESHOLD_PX = 96;
 
 const Chat = () => {
-  const navigate = useNavigate();
-  const dispatch = useDispatch();
   const queryClient = useQueryClient();
   const toast = useToast();
   const socket = useMemo(
@@ -68,7 +58,6 @@ const Chat = () => {
   const [calling, setCalling] = useState(false);
   const [callHasVideo, setCallHasVideo] = useState(false);
   const [incomingCall, setIncomingCall] = useState(null);
-  const [isSocketConnected, setIsSocketConnected] = useState(false);
   const { user } = useSelector((state) => state.auth);
   const currentUserId = Number(user?.userId);
   const hasValidUserId =
@@ -93,6 +82,13 @@ const Chat = () => {
 
   const currentUserIdRef = useRef(currentUserId);
   currentUserIdRef.current = currentUserId;
+  const isSocketConnected = useChatSocketConnection({
+    socket,
+    currentUserId,
+    queryClient,
+    toast,
+  });
+  useChatRealtimeMessages({ socket, queryClient, currentUserIdRef });
   const {
     localVideoRef,
     remoteVideoRef,
@@ -327,53 +323,6 @@ const Chat = () => {
     },
   });
 
-  useEffect(() => {
-    const handleConnect = () => {
-      setIsSocketConnected(true);
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.unreadSummary(currentUserId),
-      });
-    };
-    const handleExpiredConnection = async () => {
-      try {
-        await refreshAccessToken();
-        socket.connect();
-      } catch (error) {
-        if (error.response?.status === 401) {
-          clearAccessToken();
-          dispatch(logout());
-          navigate("/", { replace: true });
-          return;
-        }
-        toast("Không thể gia hạn phiên đăng nhập. Vui lòng thử lại.", "error");
-      }
-    };
-    const handleConnectError = (error) => {
-      setIsSocketConnected(false);
-      if (error.data?.code === "ACCESS_TOKEN_EXPIRED") {
-        handleExpiredConnection();
-      }
-    };
-    const handleDisconnect = (reason) => {
-      setIsSocketConnected(false);
-      if (reason === "io server disconnect") {
-        handleExpiredConnection();
-      }
-    };
-
-    socket.on("connect", handleConnect);
-    socket.on("connect_error", handleConnectError);
-    socket.on("disconnect", handleDisconnect);
-    socket.connect();
-
-    return () => {
-      socket.off("connect", handleConnect);
-      socket.off("connect_error", handleConnectError);
-      socket.off("disconnect", handleDisconnect);
-      socket.disconnect();
-    };
-  }, [currentUserId, dispatch, navigate, queryClient, socket, toast]);
-
   const handleAcceptCall = useCallback(
     async (from, video, callId) => {
       callIdRef.current = callId;
@@ -404,26 +353,6 @@ const Chat = () => {
       socket.on(event, handler);
       listeners.push([event, handler]);
     };
-    const handleReceiveMessage = (event) => {
-      appendSocketMessage(queryClient, currentUserIdRef.current, event);
-      if (Number(event.senderId) !== currentUserIdRef.current) {
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.unreadSummary(currentUserIdRef.current),
-        });
-      }
-    };
-    const handleConversationRead = (event) => {
-      applyConversationRead(
-        queryClient,
-        event.conversationId,
-        event.readerId,
-        event.upToMessageId,
-        event.readAt,
-      );
-    };
-
-    register("receiveMessage", handleReceiveMessage);
-    register("conversationRead", handleConversationRead);
     register("videoCallRequest", (request) => {
       clearTimeout(incomingTimerRef.current);
       setIncomingCall(request);
@@ -537,7 +466,6 @@ const Chat = () => {
     flushIceCandidateQueue,
     initializePeerConnection,
     peerConnectionRef,
-    queryClient,
     socket,
     stopLocalMedia,
     toast,

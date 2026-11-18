@@ -12,7 +12,10 @@ import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import io from "socket.io-client";
-import api from "../../shared/api/client";
+import api, {
+  clearAccessToken,
+  refreshAccessToken,
+} from "../../shared/api/client";
 import rootReducer from "../auth/store/reduces/rootReducer";
 import { ToastProvider } from "../../shared/ui/ToastProvider";
 import Chat from "./Chat";
@@ -110,6 +113,7 @@ function renderChat() {
 
 beforeEach(() => {
   intersectionObservers = [];
+  refreshAccessToken.mockReset();
   Object.defineProperty(window, "matchMedia", {
     writable: true,
     value: () => ({
@@ -390,6 +394,22 @@ test("shows realtime connection state and gates call actions", async () => {
   act(() => onConnect());
   expect(screen.getByText("Đã kết nối")).toBeInTheDocument();
   expect(callButton).toBeEnabled();
+});
+
+test("clears cached private data when socket refresh is rejected", async () => {
+  refreshAccessToken.mockRejectedValue({ response: { status: 401 } });
+  renderChat();
+  queryClient.setQueryData(["conversation", 55], { privateMessage: "secret" });
+  const onConnectError = mockSocket.on.mock.calls.find(
+    ([event]) => event === "connect_error",
+  )[1];
+
+  await act(async () => {
+    onConnectError({ data: { code: "ACCESS_TOKEN_EXPIRED" } });
+  });
+
+  expect(clearAccessToken).toHaveBeenCalled();
+  expect(queryClient.getQueryData(["conversation", 55])).toBeUndefined();
 });
 
 test("restores a failed message to the original recipient", async () => {
