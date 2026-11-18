@@ -5,10 +5,10 @@ const { failure } = require("../utils/apiResponse");
 module.exports = async (req, res, next) => {
   try {
     const user = await db.Users.findByPk(req.auth?.userId, {
-      attributes: ["userId", "userName", "role"],
+      attributes: ["userId", "userName", "role", "isActive"],
     });
 
-    if (!user) {
+    if (!user || user.isActive === false) {
       return failure(res, 401, "UNAUTHORIZED", "Authentication required");
     }
 

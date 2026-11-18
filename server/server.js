@@ -15,13 +15,19 @@ const cookieParser = require("cookie-parser");
 const cors = require("cors");
 const http = require("http");
 const { Server } = require("socket.io");
+
 const initRouters = require("./routes");
+
 const errorHandler = require("./middleware/errorHandler");
 const { failure } = require("./utils/apiResponse");
-const { userRoom, parseUserId } = require("./utils/chatUtils"); //[cite: 5]
+
+const { userRoom } = require("./utils/chatUtils");
+const registerCallHandlers = require("./sockets/callHandlers");
+
 const authService = require("./services/authService");
 const auditLogService = require("./services/auditLogService");
 const presenceService = require("./services/presenceService");
+
 const redisConnection = require("./services/redisConnection");
 const configureRedisSocketAdapter = require("./services/redisSocketAdapter");
 const { createChatEventPipeline } = require("./services/kafkaChatPipeline");
@@ -31,6 +37,7 @@ const app = express();
 const server = http.createServer(app);
 const clientUrl = process.env.CLIENT_URL || "http://localhost:3000";
 const io = new Server(server, {
+  maxHttpBufferSize: 65536,
   cors: {
     origin: clientUrl,
     credentials: true,
@@ -38,6 +45,12 @@ const io = new Server(server, {
   },
 });
 app.set("io", io);
+let adapterReady = false;
+let stopAdapter = null;
+let stopRetention = null;
+let adapterRetry = null;
+let adapterConnecting = null;
+let shuttingDown = false;
 
 app.use(express.static("public"));
 app.use(
@@ -58,6 +71,11 @@ app.use(errorHandler);
 const chatEventPipeline = createChatEventPipeline({ db, io });
 
 io.use(async (socket, next) => {
+  if (!adapterReady || !redisConnection.getClient()?.isReady || shuttingDown) {
+    const error = new Error("Realtime unavailable");
+    error.data = { code: "REALTIME_UNAVAILABLE" };
+    return next(error);
+  }
   const token = socket.handshake.auth?.token;
   if (!token) {
     const error = new Error("Authentication required");
@@ -68,9 +86,9 @@ io.use(async (socket, next) => {
   try {
     const auth = authService.verifyAccessToken(token);
     const user = await db.Users.findByPk(auth.userId, {
-      attributes: ["userId", "userName", "role"],
+      attributes: ["userId", "userName", "role", "isActive"],
     });
-    if (!user) {
+    if (!user || user.isActive === false) {
       const error = new Error("Authentication required");
       error.data = { code: "INVALID_ACCESS_TOKEN" };
       return next(error);
@@ -112,8 +130,26 @@ io.on("connection", (socket) => {
   const remainingTokenLifetime = accessTokenExpiresAt * 1000 - Date.now();
   const expiryTimer = setTimeout(
     () => socket.disconnect(true),
-    Math.max(remainingTokenLifetime, 0),
+    Math.min(Math.max(remainingTokenLifetime, 0), 2_147_483_647),
   );
+  socket.use(async (_packet, next) => {
+    try {
+      if (Date.now() >= accessTokenExpiresAt * 1000) {
+        socket.disconnect(true);
+        return;
+      }
+      const user = await db.Users.findByPk(userId, {
+        attributes: ["userId", "isActive"],
+      });
+      if (!user || user.isActive === false) {
+        socket.disconnect(true);
+        return;
+      }
+      return next();
+    } catch (error) {
+      return next(error);
+    }
+  });
   socket.on("disconnect", () => {
     clearTimeout(expiryTimer);
     presenceService.disconnect(userId, socket.id);
@@ -128,70 +164,84 @@ io.on("connection", (socket) => {
       });
   });
 
-  socket.on("videoCallRequest", (payload = {}) => {
-    const { to, video } = payload || {};
-    const recipientId = parseUserId(to);
-    if (!recipientId) return;
-
-    io.to(userRoom(recipientId)).emit("videoCallRequest", {
-      from: userId,
-      name: userName,
-      video: Boolean(video),
-    });
-  });
-
-  socket.on("callAccepted", (payload = {}) => {
-    const { to, video } = payload || {};
-    const recipientId = parseUserId(to);
-    if (!recipientId) return;
-
-    io.to(userRoom(recipientId)).emit("callAccepted", {
-      from: userId,
-      video: Boolean(video),
-    });
-  });
-
-  socket.on("callRejected", (payload = {}) => {
-    const { to } = payload || {};
-    const recipientId = parseUserId(to);
-    if (recipientId) io.to(userRoom(recipientId)).emit("callRejected");
-  });
-
-  socket.on("callEnded", (payload = {}) => {
-    const { to } = payload || {};
-    const recipientId = parseUserId(to);
-    if (recipientId) io.to(userRoom(recipientId)).emit("callEnded");
-  });
-
-  socket.on("offer", (payload = {}) => {
-    const { offer, to } = payload || {};
-    const recipientId = parseUserId(to);
-    if (recipientId) io.to(userRoom(recipientId)).emit("offer", { offer });
-  });
-
-  socket.on("answer", (payload = {}) => {
-    const { answer, to } = payload || {};
-    const recipientId = parseUserId(to);
-    if (recipientId) io.to(userRoom(recipientId)).emit("answer", { answer });
-  });
-
-  socket.on("ice-candidate", (payload = {}) => {
-    const { iceCandidate, to } = payload || {};
-    const recipientId = parseUserId(to);
-    if (recipientId) {
-      io.to(userRoom(recipientId)).emit("ice-candidate", { iceCandidate });
-    }
-  });
+  registerCallHandlers(io, socket);
 });
 
 const PORT = process.env.PORT || 5000;
-auditLogService.startRetentionCleanup();
+
+async function ensureAdapter() {
+  if (adapterReady || shuttingDown) return;
+  if (adapterConnecting) return adapterConnecting;
+  adapterConnecting = configureRedisSocketAdapter(io, redisConnection)
+    .then((cleanup) => {
+      stopAdapter = cleanup;
+      adapterReady = Boolean(cleanup);
+    })
+    .finally(() => {
+      adapterConnecting = null;
+    });
+  return adapterConnecting;
+}
 
 async function startServer() {
-  await configureRedisSocketAdapter(io, redisConnection);
-  await chatEventPipeline.start();
-  server.listen(PORT, () => {
+  try {
+    await db.sequelize.authenticate();
+    await ensureAdapter();
+    adapterRetry = setInterval(() => {
+      void ensureAdapter().catch((error) =>
+        console.error("Redis adapter retry failed:", error),
+      );
+    }, 5000);
+    adapterRetry.unref?.();
+    await chatEventPipeline.start();
+    stopRetention = auditLogService.startRetentionCleanup();
+    await new Promise((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(PORT, () => {
+        server.off("error", reject);
+        resolve();
+      });
+    });
     console.log(`Server is running at http://localhost:${PORT}`);
+  } catch (error) {
+    await shutdown();
+    throw error;
+  }
+}
+
+async function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  if (adapterRetry) clearInterval(adapterRetry);
+  stopRetention?.();
+  io.disconnectSockets(true);
+  if (server.listening) {
+    await new Promise((resolve) => server.close(() => resolve()));
+  }
+  const results = await Promise.allSettled([
+    chatEventPipeline.stop(),
+    stopAdapter?.(),
+    redisConnection.quit(),
+    db.sequelize.close(),
+  ]);
+  for (const result of results) {
+    if (result.status === "rejected")
+      console.error("Shutdown cleanup failed:", result.reason);
+  }
+}
+
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.once(signal, () => {
+    const timeout = setTimeout(() => {
+      process.exitCode = 1;
+      process.exit();
+    }, 10000);
+    void shutdown()
+      .catch((error) => {
+        console.error("Shutdown failed:", error);
+        process.exitCode = 1;
+      })
+      .finally(() => clearTimeout(timeout));
   });
 }
 

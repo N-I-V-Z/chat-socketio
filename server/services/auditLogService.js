@@ -13,12 +13,19 @@ const EVENT_TYPES = Object.freeze({
   MESSAGE_SENT: "message.sent",
   ADMIN_USERS_VIEWED: "admin.users.viewed",
   ADMIN_AUDIT_LOGS_VIEWED: "admin.audit_logs.viewed",
+  ACCOUNT_STATUS_CHANGED: "admin.account_status.changed",
 });
 const ALLOWED_EVENT_TYPES = new Set(Object.values(EVENT_TYPES));
 
 async function recordEvent(
-  { eventType, actorUserId = null, actorUserName = null, targetUserId = null, outcome = null },
-  options = {}
+  {
+    eventType,
+    actorUserId = null,
+    actorUserName = null,
+    targetUserId = null,
+    outcome = null,
+  },
+  options = {},
 ) {
   if (!ALLOWED_EVENT_TYPES.has(eventType)) {
     throw new Error("Unsupported audit event type.");
@@ -32,7 +39,7 @@ async function recordEvent(
       targetUserId,
       outcome,
     },
-    options
+    options,
   );
 }
 
@@ -57,6 +64,7 @@ function startRetentionCleanup() {
   cleanup();
   const timer = setInterval(cleanup, CLEANUP_INTERVAL_MS);
   timer.unref();
+  return () => clearInterval(timer);
 }
 
 module.exports = {

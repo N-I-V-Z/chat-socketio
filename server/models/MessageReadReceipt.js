@@ -1,7 +1,10 @@
+const auditAttributes = require("./auditAttributes");
+
 module.exports = function (sequelize, DataTypes) {
   return sequelize.define(
     "MessageReadReceipt",
     {
+      ...auditAttributes(DataTypes),
       MessageId: {
         type: DataTypes.INTEGER,
         allowNull: false,

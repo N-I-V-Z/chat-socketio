@@ -1,7 +1,10 @@
+const auditAttributes = require("./auditAttributes");
+
 module.exports = function (sequelize, DataTypes) {
   return sequelize.define(
     "OutboxEvent",
     {
+      ...auditAttributes(DataTypes),
       eventId: {
         type: DataTypes.UUID,
         allowNull: false,

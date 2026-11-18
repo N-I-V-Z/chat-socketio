@@ -4,7 +4,7 @@ const presenceService = require("./presenceService");
 async function getUsers() {
   const onlineUserIds = presenceService.getOnlineUserIds();
   const users = await db.Users.findAll({
-    attributes: ["userId", "userName", "role"],
+    attributes: ["userId", "userName", "role", "isActive"],
     order: [["userName", "ASC"]],
   });
 
@@ -12,6 +12,7 @@ async function getUsers() {
     userId: user.userId,
     userName: user.userName,
     role: user.role,
+    isActive: user.isActive !== false,
     isOnline: onlineUserIds.has(user.userId),
   }));
 }

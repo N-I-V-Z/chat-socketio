@@ -1,9 +1,11 @@
 const Sequelize = require("sequelize");
+const auditAttributes = require("./auditAttributes");
 
 module.exports = function (sequelize, DataTypes) {
   return sequelize.define(
     "AuditLog",
     {
+      ...auditAttributes(DataTypes),
       eventId: {
         type: DataTypes.INTEGER,
         allowNull: false,
@@ -44,6 +46,6 @@ module.exports = function (sequelize, DataTypes) {
         { name: "IX_AuditLogs_occurredAt", fields: ["occurredAt"] },
         { name: "IX_AuditLogs_eventType", fields: ["eventType"] },
       ],
-    }
+    },
   );
 };

@@ -18,10 +18,27 @@ test("admin user listing exposes safe fields and current socket presence", async
 
   try {
     const users = await adminService.getUsers();
-    assert.deepEqual(queryOptions.attributes, ["userId", "userName", "role"]);
+    assert.deepEqual(queryOptions.attributes, [
+      "userId",
+      "userName",
+      "role",
+      "isActive",
+    ]);
     assert.deepEqual(users, [
-      { userId: 1, userName: "admin", role: "admin", isOnline: false },
-      { userId: 2, userName: "member", role: "user", isOnline: true },
+      {
+        userId: 1,
+        userName: "admin",
+        role: "admin",
+        isActive: true,
+        isOnline: false,
+      },
+      {
+        userId: 2,
+        userName: "member",
+        role: "user",
+        isActive: true,
+        isOnline: true,
+      },
     ]);
     assert.equal(JSON.stringify(users).includes("password"), false);
   } finally {

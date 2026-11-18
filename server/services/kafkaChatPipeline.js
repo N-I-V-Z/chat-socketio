@@ -280,7 +280,13 @@ function createChatEventPipeline({
     await Promise.all(disconnects);
   }
 
-  return { consumeMessage, relayPendingEvents, start, stop };
+  return {
+    consumeMessage,
+    relayPendingEvents,
+    start,
+    stop,
+    isReady: () => producerConnected && consumerConnected,
+  };
 }
 
 module.exports = {
