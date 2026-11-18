@@ -55,7 +55,7 @@ const Chat = () => {
   const [receiverId, setReceiverId] = useState("");
   const [isMobileConversationOpen, setIsMobileConversationOpen] =
     useState(false);
-  const [message, setMessage] = useState("");
+  const [drafts, setDrafts] = useState({});
   const [peerConnection, setPeerConnection] = useState(null);
   const [isCallModalVisible, setIsCallModalVisible] = useState(false);
   const [calling, setCalling] = useState(false);
@@ -66,9 +66,13 @@ const Chat = () => {
   const hasValidUserId =
     Number.isSafeInteger(currentUserId) && currentUserId > 0;
   const normalizedReceiverId = receiverId ? Number(receiverId) : null;
+  const draftKey = String(receiverId);
+  const message = drafts[draftKey] || "";
   const hasValidReceiver =
     Number.isSafeInteger(normalizedReceiverId) && normalizedReceiverId > 0;
   const localVideoRef = useRef(null);
+  const localStreamRef = useRef(null);
+  const callGenerationRef = useRef(0);
   const remoteVideoRef = useRef(null);
   const remoteAudioRef = useRef(null);
   const messageListRef = useRef(null);
@@ -93,8 +97,10 @@ const Chat = () => {
   currentUserIdRef.current = currentUserId;
 
   const stopLocalMedia = useCallback(() => {
-    const stream = localVideoRef.current?.srcObject;
+    callGenerationRef.current += 1;
+    const stream = localStreamRef.current;
     stream?.getTracks().forEach((track) => track.stop());
+    localStreamRef.current = null;
     if (localVideoRef.current) {
       localVideoRef.current.srcObject = null;
     }
@@ -337,7 +343,13 @@ const Chat = () => {
       );
     },
     onError: (_error, variables) => {
-      setMessage((currentMessage) => currentMessage || variables.message);
+      const key = String(variables.receiverId);
+      setDrafts((current) => ({
+        ...current,
+        [key]: current[key]
+          ? `${variables.message}\n${current[key]}`
+          : variables.message,
+      }));
       toast("Tin nhắn chưa được gửi. Vui lòng thử lại.", "error");
     },
   });
@@ -412,6 +424,7 @@ const Chat = () => {
   // Khởi tạo RTCPeerConnection dùng chung, tách biệt vai trò tạo offer (Caller) và chờ nhận offer (Callee)
   const initializePeerConnection = useCallback(
     async (video, shouldCreateOffer = false) => {
+      const generation = ++callGenerationRef.current;
       setCallHasVideo(Boolean(video));
       iceCandidateQueueRef.current = [];
 
@@ -447,6 +460,12 @@ const Chat = () => {
           video: video ?? false,
           audio: true,
         });
+        if (generation !== callGenerationRef.current) {
+          stream.getTracks().forEach((track) => track.stop());
+          connection.close();
+          return null;
+        }
+        localStreamRef.current = stream;
 
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = stream;
@@ -639,6 +658,9 @@ const Chat = () => {
     return () => {
       clearTimeout(ringTimerRef.current);
       clearTimeout(incomingTimerRef.current);
+      peerConnectionRef.current?.close();
+      peerConnectionRef.current = null;
+      stopLocalMedia();
       socket.off("receiveMessage");
       socket.off("conversationRead");
       socket.off("videoCallRequest");
@@ -690,7 +712,7 @@ const Chat = () => {
         conversationId,
         message: text,
       });
-      setMessage("");
+      setDrafts((current) => ({ ...current, [draftKey]: "" }));
     }
   };
 
@@ -812,7 +834,12 @@ const Chat = () => {
           messages={messages}
           messagesQuery={messagesQuery}
           onBack={() => setIsMobileConversationOpen(false)}
-          onMessageChange={(event) => setMessage(event.target.value)}
+          onMessageChange={(event) =>
+            setDrafts((current) => ({
+              ...current,
+              [draftKey]: event.target.value,
+            }))
+          }
           onMessageKeyDown={handleMessageKeyDown}
           onMessageListScroll={handleMessageListScroll}
           onRequestCall={requestCall}

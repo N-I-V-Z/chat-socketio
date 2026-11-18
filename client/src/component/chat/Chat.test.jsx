@@ -347,6 +347,78 @@ test("sends through the conversation API and keeps one composer focus ring", asy
   );
 });
 
+test("keeps a draft with its recipient when switching conversations", async () => {
+  const originalGet = api.get.getMockImplementation();
+  api.get.mockImplementation((path, options) =>
+    path === "/api/v1/users"
+      ? Promise.resolve({
+          data: {
+            data: [
+              { userId: 9, userName: "member" },
+              { userId: 10, userName: "second" },
+            ],
+          },
+        })
+      : originalGet(path, options),
+  );
+
+  renderChat();
+  fireEvent.click(await screen.findByRole("button", { name: "member" }));
+  fireEvent.change(screen.getByLabelText("Tin nhắn mới"), {
+    target: { value: "Chỉ gửi cho member" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "second" }));
+  expect(screen.getByLabelText("Tin nhắn mới")).toHaveValue("");
+  fireEvent.click(screen.getByRole("button", { name: "member" }));
+  expect(screen.getByLabelText("Tin nhắn mới")).toHaveValue(
+    "Chỉ gửi cho member",
+  );
+});
+
+test("restores a failed message to the original recipient", async () => {
+  api.post.mockRejectedValue(new Error("network failure"));
+  renderChat();
+  fireEvent.click(await screen.findByRole("button", { name: "member" }));
+  await screen.findByText("Tin nhắn của tôi");
+  fireEvent.change(screen.getByLabelText("Tin nhắn mới"), {
+    target: { value: "Thử lại" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Gửi" }));
+  await waitFor(() =>
+    expect(screen.getByLabelText("Tin nhắn mới")).toHaveValue("Thử lại"),
+  );
+});
+
+test("stops audio tracks and closes the peer connection on unmount", async () => {
+  const track = { stop: jest.fn() };
+  const stream = { getTracks: () => [track] };
+  const getUserMedia = jest.fn().mockResolvedValue(stream);
+  Object.defineProperty(navigator, "mediaDevices", {
+    configurable: true,
+    value: { getUserMedia },
+  });
+  const connection = {
+    addTrack: jest.fn(),
+    close: jest.fn(),
+    createOffer: jest.fn().mockResolvedValue({ type: "offer" }),
+    setLocalDescription: jest.fn().mockResolvedValue(),
+    signalingState: "stable",
+  };
+  global.RTCPeerConnection = jest.fn(() => connection);
+
+  const view = renderChat();
+  const onAccepted = mockSocket.on.mock.calls.find(
+    ([event]) => event === "callAccepted",
+  )[1];
+  await act(async () => {
+    onAccepted({ from: 9, video: false, callId: "call-1" });
+  });
+  await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+  view.unmount();
+  expect(track.stop).toHaveBeenCalledTimes(1);
+  expect(connection.close).toHaveBeenCalled();
+});
+
 test("shows the unread count beside the matching contact", async () => {
   api.get.mockImplementation((path) =>
     Promise.resolve({
