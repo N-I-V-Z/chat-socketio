@@ -18,6 +18,7 @@ const { Server } = require("socket.io");
 const initRouters = require("./routes");
 const errorHandler = require("./middleware/errorHandler");
 const { failure } = require("./utils/apiResponse");
+const { userRoom, parseUserId } = require("./utils/chatUtils"); //[cite: 5]
 const authService = require("./services/authService");
 const auditLogService = require("./services/auditLogService");
 const presenceService = require("./services/presenceService");
@@ -53,15 +54,6 @@ app.use(bodyParser.urlencoded({ extended: true, limit: "1mb" }));
 initRouters(app);
 app.use((req, res) => failure(res, 404, "ROUTE_NOT_FOUND", "Route not found"));
 app.use(errorHandler);
-
-function userRoom(userId) {
-  return `user:${userId}`;
-}
-
-function parseUserId(value) {
-  const userId = Number(value);
-  return Number.isSafeInteger(userId) && userId > 0 ? userId : null;
-}
 
 const chatEventPipeline = createChatEventPipeline({ db, io });
 
