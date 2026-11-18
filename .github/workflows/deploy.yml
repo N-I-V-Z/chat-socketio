@@ -86,7 +86,7 @@ jobs:
 
           # Deploy
           echo "Deploying containers..."
-          docker compose up -d --force-recreate
+          docker compose up -d
 
           # Kiểm tra container
           docker compose ps
