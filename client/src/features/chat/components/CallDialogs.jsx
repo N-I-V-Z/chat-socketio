@@ -1,5 +1,8 @@
+import { useEffect, useState } from "react";
+import { IoExpandOutline } from "react-icons/io5";
 import Button from "../../../shared/ui/Button";
 import Dialog from "../../../shared/ui/Dialog";
+import { cn } from "../../../shared/ui/cn";
 
 function CallDialogs({
   acceptIncomingCall,
@@ -15,6 +18,12 @@ function CallDialogs({
   remoteVideoRef,
   selectedUserName,
 }) {
+  const [localExpanded, setLocalExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!isCallModalVisible) setLocalExpanded(false);
+  }, [isCallModalVisible]);
+
   return (
     <>
       <Dialog
@@ -44,8 +53,16 @@ function CallDialogs({
           if (!open) handleCallCancel();
         }}
         title={callHasVideo ? "Cuộc gọi video" : "Cuộc gọi thoại"}
-        description={`Đang kết nối với ${selectedUserName}.`}
-        className="max-w-3xl"
+        description={
+          callHasVideo
+            ? `Đang gọi cho ${selectedUserName}. Chạm vào camera của bạn để đổi kích thước.`
+            : `Đang kết nối với ${selectedUserName}.`
+        }
+        className={
+          callHasVideo
+            ? "w-[calc(100%-1rem)] max-w-6xl max-h-[calc(100dvh-1rem)] p-4 sm:w-[calc(100%-2rem)] sm:p-6"
+            : "max-w-xl"
+        }
         footer={
           <Button
             variant="secondary"
@@ -57,30 +74,61 @@ function CallDialogs({
         }
       >
         {callHasVideo ? (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="overflow-hidden rounded-xl bg-slate-950">
+          <div
+            role="group"
+            aria-label="Video cuộc gọi"
+            className="relative h-[min(56dvh,34rem)] min-h-64 overflow-hidden rounded-panel bg-slate-950 sm:h-[min(64dvh,42rem)]"
+          >
+            <div
+              data-video-size={localExpanded ? "inset" : "main"}
+              className={cn(
+                "absolute overflow-hidden bg-slate-950 transition-[top,right,width,height,border-radius] duration-300 ease-premium motion-reduce:transition-none",
+                localExpanded
+                  ? "right-3 top-3 z-20 h-28 w-24 rounded-xl border border-white/25 shadow-float sm:right-5 sm:top-5 sm:h-36 sm:w-56"
+                  : "right-0 top-0 z-0 h-full w-full",
+              )}
+            >
+              <video
+                ref={remoteVideoRef}
+                autoPlay
+                playsInline
+                aria-label={`Hình ảnh camera của ${selectedUserName}`}
+                className="h-full w-full object-cover"
+              />
+              <span className="absolute bottom-2 left-2 max-w-[calc(100%-1rem)] truncate rounded-md bg-slate-950/70 px-2 py-1 text-xs font-semibold text-white sm:bottom-3 sm:left-3">
+                {selectedUserName}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setLocalExpanded((expanded) => !expanded)}
+              aria-label={
+                localExpanded
+                  ? "Thu nhỏ camera của bạn"
+                  : "Phóng to camera của bạn"
+              }
+              aria-pressed={localExpanded}
+              data-video-size={localExpanded ? "main" : "inset"}
+              className={cn(
+                "absolute overflow-hidden bg-slate-900 text-white transition-[top,right,width,height,border-radius] duration-300 ease-premium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 motion-reduce:transition-none",
+                localExpanded
+                  ? "right-0 top-0 z-10 h-full w-full rounded-none"
+                  : "right-3 top-3 z-20 h-28 w-24 rounded-xl border border-white/25 shadow-float sm:right-5 sm:top-5 sm:h-36 sm:w-56",
+              )}
+            >
               <video
                 ref={localVideoRef}
                 autoPlay
                 muted
                 playsInline
                 aria-label="Hình ảnh camera của bạn"
-                className="aspect-video w-full object-cover"
+                className="h-full w-full -scale-x-100 object-cover"
               />
-              <p className="px-3 py-2 text-xs text-white/80">Bạn</p>
-            </div>
-            <div className="overflow-hidden rounded-xl bg-slate-950">
-              <video
-                ref={remoteVideoRef}
-                autoPlay
-                playsInline
-                aria-label={`Hình ảnh camera của ${selectedUserName}`}
-                className="aspect-video w-full object-cover"
-              />
-              <p className="px-3 py-2 text-xs text-white/80">
-                {selectedUserName}
-              </p>
-            </div>
+              <span className="absolute bottom-2 left-2 flex max-w-[calc(100%-1rem)] items-center gap-1 truncate rounded-md bg-slate-950/70 px-2 py-1 text-xs font-semibold text-white sm:bottom-3 sm:left-3">
+                {localExpanded ? "Bạn · Chạm để thu nhỏ" : "Bạn"}
+                {!localExpanded && <IoExpandOutline aria-hidden="true" />}
+              </span>
+            </button>
           </div>
         ) : (
           <div className="grid min-h-48 place-items-center rounded-xl bg-surface-muted p-6 text-center">
