@@ -88,6 +88,17 @@ const Chat = () => {
   const requestedReadMessageIdRef = useRef(0);
   const acknowledgedReadMessageIdRef = useRef(0);
   const readReceiptTimerRef = useRef(null);
+
+  // Dùng ref để lưu trữ các giá trị thay đổi liên tục nhằm tránh đưa vào dependency array của socket useEffect
+  const peerConnectionRef = useRef(peerConnection);
+  peerConnectionRef.current = peerConnection;
+
+  const receiverIdRef = useRef(receiverId);
+  receiverIdRef.current = receiverId;
+
+  const currentUserIdRef = useRef(currentUserId);
+  currentUserIdRef.current = currentUserId;
+
   const stopLocalMedia = useCallback(() => {
     const stream = localVideoRef.current?.srcObject;
     stream?.getTracks().forEach((track) => track.stop());
@@ -199,22 +210,23 @@ const Chat = () => {
       ),
     [unreadSummaryQuery.data],
   );
+
   const latestSeenMessageId = useMemo(() => {
-    if (!hasValidReceiver) return null;
-    return (
-      messages.reduce((latestId, item) => {
-        if (
-          Number(item.senderId) !== currentUserId ||
-          !item.readReceipts.some(
-            (receipt) => Number(receipt.UserId) === normalizedReceiverId,
-          )
-        ) {
-          return latestId;
-        }
-        return Math.max(latestId, Number(item.MessageId) || 0);
-      }, 0) || null
-    );
+    if (!hasValidReceiver || messages.length === 0) return null;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const item = messages[i];
+      if (
+        Number(item.senderId) === currentUserId &&
+        item.readReceipts.some(
+          (receipt) => Number(receipt.UserId) === normalizedReceiverId,
+        )
+      ) {
+        return Number(item.MessageId) || 0;
+      }
+    }
+    return null;
   }, [currentUserId, hasValidReceiver, messages, normalizedReceiverId]);
+
   const messageGroups = useMemo(() => groupMessagesByDay(messages), [messages]);
   const selectedUser = userList.find(
     (listedUser) => Number(listedUser.userId) === normalizedReceiverId,
@@ -394,41 +406,45 @@ const Chat = () => {
     [conversationId, hasValidConversationId, markReadMutation.mutate],
   );
 
+  // Cố định vòng đời IntersectionObserver kết hợp MutationObserver để tự động bắt tin nhắn mới thêm/optimistic updates
   useEffect(() => {
     const container = messageListRef.current;
-    if (!container || !messagesQuery.data) return undefined;
+    if (!container) return undefined;
 
-    const messageElements = container.querySelectorAll(
-      "[data-chat-message][data-message-id]",
-    );
-    if (typeof IntersectionObserver === "undefined") {
-      const markVisibleMessages = () => {
-        const containerBounds = container.getBoundingClientRect();
-        let highestVisibleMessageId = 0;
-        messageElements.forEach((element) => {
-          const bounds = element.getBoundingClientRect();
-          const visibleHeight =
-            Math.min(bounds.bottom, containerBounds.bottom) -
-            Math.max(bounds.top, containerBounds.top);
-          if (
-            visibleHeight > 0 &&
-            visibleHeight / Math.max(bounds.height, 1) >=
-              READ_INTERSECTION_THRESHOLD
-          ) {
-            highestVisibleMessageId = Math.max(
-              highestVisibleMessageId,
-              Number(element.dataset.messageId) || 0,
-            );
-          }
-        });
-        if (highestVisibleMessageId > 0) {
-          queueReadReceipt(highestVisibleMessageId);
+    const markVisibleMessages = (messageElements) => {
+      const containerBounds = container.getBoundingClientRect();
+      let highestVisibleMessageId = 0;
+      messageElements.forEach((element) => {
+        const bounds = element.getBoundingClientRect();
+        const visibleHeight =
+          Math.min(bounds.bottom, containerBounds.bottom) -
+          Math.max(bounds.top, containerBounds.top);
+        if (
+          visibleHeight > 0 &&
+          visibleHeight / Math.max(bounds.height, 1) >=
+            READ_INTERSECTION_THRESHOLD
+        ) {
+          highestVisibleMessageId = Math.max(
+            highestVisibleMessageId,
+            Number(element.dataset.messageId) || 0,
+          );
         }
-      };
+      });
+      if (highestVisibleMessageId > 0) {
+        queueReadReceipt(highestVisibleMessageId);
+      }
+    };
 
-      markVisibleMessages();
-      container.addEventListener("scroll", markVisibleMessages);
-      return () => container.removeEventListener("scroll", markVisibleMessages);
+    if (typeof IntersectionObserver === "undefined") {
+      const handleScroll = () => {
+        const messageElements = container.querySelectorAll(
+          "[data-chat-message][data-message-id]",
+        );
+        markVisibleMessages(messageElements);
+      };
+      handleScroll();
+      container.addEventListener("scroll", handleScroll);
+      return () => container.removeEventListener("scroll", handleScroll);
     }
 
     const observer = new IntersectionObserver(
@@ -450,9 +466,30 @@ const Chat = () => {
         threshold: [0, READ_INTERSECTION_THRESHOLD],
       },
     );
-    messageElements.forEach((element) => observer.observe(element));
-    return () => observer.disconnect();
-  }, [conversationId, messagesQuery.data, queueReadReceipt]);
+
+    const observeElements = () => {
+      const messageElements = container.querySelectorAll(
+        "[data-chat-message][data-message-id]",
+      );
+      messageElements.forEach((element) => observer.observe(element));
+    };
+
+    observeElements();
+
+    const mutationObserver = new MutationObserver(() => {
+      observeElements();
+    });
+
+    mutationObserver.observe(container, {
+      childList: true,
+      subtree: true,
+    });
+
+    return () => {
+      mutationObserver.disconnect();
+      observer.disconnect();
+    };
+  }, [conversationId, queueReadReceipt]);
 
   const sendMessageMutation = useMutation({
     mutationFn: async ({ conversationId: targetId, message: text }) => {
@@ -530,7 +567,7 @@ const Chat = () => {
         if (event.candidate) {
           socket.emit("ice-candidate", {
             iceCandidate: event.candidate,
-            to: receiverId,
+            to: receiverIdRef.current,
           });
         }
       };
@@ -562,7 +599,7 @@ const Chat = () => {
         setPeerConnection(connection);
         const offer = await connection.createOffer();
         await connection.setLocalDescription(offer);
-        socket.emit("offer", { offer, to: receiverId });
+        socket.emit("offer", { offer, to: receiverIdRef.current });
       } catch {
         connection.close();
         stopLocalMedia();
@@ -572,7 +609,7 @@ const Chat = () => {
         toast("Không thể truy cập micro hoặc camera.", "error");
       }
     },
-    [receiverId, socket, stopLocalMedia, toast],
+    [socket, stopLocalMedia, toast],
   );
 
   const handleAcceptCall = useCallback(
@@ -590,12 +627,13 @@ const Chat = () => {
     [socket, startCall, user.userId],
   );
 
+  // useEffect đăng ký sự kiện socket giờ đây chỉ chạy một lần duy nhất khi mount
   useEffect(() => {
     const handleReceiveMessage = (event) => {
-      appendSocketMessage(queryClient, currentUserId, event);
-      if (Number(event.senderId) !== currentUserId) {
+      appendSocketMessage(queryClient, currentUserIdRef.current, event);
+      if (Number(event.senderId) !== currentUserIdRef.current) {
         queryClient.invalidateQueries({
-          queryKey: queryKeys.unreadSummary(currentUserId),
+          queryKey: queryKeys.unreadSummary(currentUserIdRef.current),
         });
       }
     };
@@ -626,8 +664,8 @@ const Chat = () => {
     socket.on("callEnded", () => {
       setIsCallModalVisible(false);
       setCalling(false);
-      if (peerConnection) {
-        peerConnection.close();
+      if (peerConnectionRef.current) {
+        peerConnectionRef.current.close();
         setPeerConnection(null);
       }
       stopLocalMedia();
@@ -635,25 +673,27 @@ const Chat = () => {
       toast("Cuộc gọi đã kết thúc.", "info");
     });
     socket.on("offer", async ({ offer }) => {
-      if (!peerConnection) return;
+      const activePeerConnection = peerConnectionRef.current;
+      if (!activePeerConnection) return;
 
       try {
-        await peerConnection.setRemoteDescription(
+        await activePeerConnection.setRemoteDescription(
           new RTCSessionDescription(offer),
         );
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-        socket.emit("answer", { answer, to: receiverId });
+        const answer = await activePeerConnection.createAnswer();
+        await activePeerConnection.setLocalDescription(answer);
+        socket.emit("answer", { answer, to: receiverIdRef.current });
       } catch (error) {
         console.error("Could not accept the call offer", error);
         toast("Không thể thiết lập cuộc gọi.", "error");
       }
     });
     socket.on("answer", async ({ answer }) => {
-      if (!peerConnection) return;
+      const activePeerConnection = peerConnectionRef.current;
+      if (!activePeerConnection) return;
 
       try {
-        await peerConnection.setRemoteDescription(
+        await activePeerConnection.setRemoteDescription(
           new RTCSessionDescription(answer),
         );
       } catch (error) {
@@ -662,9 +702,10 @@ const Chat = () => {
       }
     });
     socket.on("ice-candidate", async (candidate) => {
-      if (!peerConnection || !candidate.iceCandidate) return;
+      const activePeerConnection = peerConnectionRef.current;
+      if (!activePeerConnection || !candidate.iceCandidate) return;
       try {
-        await peerConnection.addIceCandidate(
+        await activePeerConnection.addIceCandidate(
           new RTCIceCandidate(candidate.iceCandidate),
         );
       } catch (error) {
@@ -684,16 +725,7 @@ const Chat = () => {
       socket.off("answer");
       socket.off("ice-candidate");
     };
-  }, [
-    currentUserId,
-    peerConnection,
-    queryClient,
-    receiverId,
-    socket,
-    stopLocalMedia,
-    startCall,
-    toast,
-  ]);
+  }, [queryClient, socket, stopLocalMedia, startCall, toast]);
 
   const sendMessage = () => {
     const text = message.trim();
