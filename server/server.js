@@ -26,6 +26,7 @@ let stopAdapter = null;
 let stopRetention = null;
 let adapterRetry = null;
 let adapterConnecting = null;
+let adapterEventsAttached = false;
 let shuttingDown = false;
 const app = createApp({
   readiness: async () => {
@@ -63,6 +64,13 @@ async function ensureAdapter() {
     .then((cleanup) => {
       stopAdapter = cleanup;
       adapterReady = Boolean(cleanup);
+      if (adapterReady && !adapterEventsAttached) {
+        const redis = redisConnection.getClient();
+        const disconnectRealtime = () => io.disconnectSockets(true);
+        redis.on("reconnecting", disconnectRealtime);
+        redis.on("end", disconnectRealtime);
+        adapterEventsAttached = true;
+      }
     })
     .finally(() => {
       adapterConnecting = null;
