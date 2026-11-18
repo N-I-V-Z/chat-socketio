@@ -7,7 +7,7 @@ function errorCode(error) {
 async function configureRedisSocketAdapter(
   io,
   redisConnection,
-  logger = console,
+  logger = require("./logger"),
 ) {
   await redisConnection.connect();
   const redisClient = redisConnection.getClient();

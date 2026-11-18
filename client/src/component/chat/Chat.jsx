@@ -79,6 +79,8 @@ const Chat = () => {
   const olderFetchInFlightRef = useRef(false);
   const iceCandidateQueueRef = useRef([]);
   const callIdRef = useRef(null);
+  const ringTimerRef = useRef(null);
+  const incomingTimerRef = useRef(null);
 
   // Dùng ref để lưu trữ các giá trị thay đổi liên tục nhằm tránh đưa vào dependency array của socket useEffect
   const peerConnectionRef = useRef(peerConnection);
@@ -495,13 +497,17 @@ const Chat = () => {
 
       const connection = await initializePeerConnection(video, false);
       if (connection) {
-        socket.emit("callAccepted", {
-          to: from,
-          callId,
+        socket.emit("callAccepted", { to: from, callId }, (reply) => {
+          if (reply?.ok) return;
+          callIdRef.current = null;
+          setIsCallModalVisible(false);
+          connection.close();
+          stopLocalMedia();
+          toast("Cuộc gọi đã hết hạn hoặc không còn khả dụng.", "error");
         });
       }
     },
-    [initializePeerConnection, socket],
+    [initializePeerConnection, socket, stopLocalMedia, toast],
   );
 
   // useEffect đăng ký sự kiện socket giờ đây chỉ chạy một lần duy nhất khi mount
@@ -526,11 +532,16 @@ const Chat = () => {
 
     socket.on("receiveMessage", handleReceiveMessage);
     socket.on("conversationRead", handleConversationRead);
-    socket.on("videoCallRequest", (request) => setIncomingCall(request));
+    socket.on("videoCallRequest", (request) => {
+      clearTimeout(incomingTimerRef.current);
+      setIncomingCall(request);
+      incomingTimerRef.current = setTimeout(() => setIncomingCall(null), 60000);
+    });
 
     // Khi đối phương bấm chấp nhận cuộc gọi -> Bên gọi (Caller) bắt đầu khởi tạo PeerConnection và gửi Offer
     socket.on("callAccepted", ({ from, video, callId }) => {
       if (callIdRef.current && callIdRef.current !== callId) return;
+      clearTimeout(ringTimerRef.current);
       callIdRef.current = callId;
       setReceiverId(from);
       receiverIdRef.current = from;
@@ -542,6 +553,7 @@ const Chat = () => {
 
     socket.on("callRejected", ({ callId }) => {
       if (callIdRef.current !== callId) return;
+      clearTimeout(ringTimerRef.current);
       callIdRef.current = null;
       toast("Cuộc gọi đã bị từ chối.", "info");
       setCalling(false);
@@ -549,6 +561,8 @@ const Chat = () => {
 
     socket.on("callEnded", ({ callId }) => {
       if (callIdRef.current !== callId) return;
+      clearTimeout(ringTimerRef.current);
+      clearTimeout(incomingTimerRef.current);
       callIdRef.current = null;
       setIsCallModalVisible(false);
       setCalling(false);
@@ -623,6 +637,8 @@ const Chat = () => {
     });
 
     return () => {
+      clearTimeout(ringTimerRef.current);
+      clearTimeout(incomingTimerRef.current);
       socket.off("receiveMessage");
       socket.off("conversationRead");
       socket.off("videoCallRequest");
@@ -642,6 +658,24 @@ const Chat = () => {
     stopLocalMedia,
     toast,
   ]);
+
+  useEffect(() => {
+    if (!isCallModalVisible) return undefined;
+    const timer = setInterval(() => {
+      if (!callIdRef.current) return;
+      socket.emit("callHeartbeat", { callId: callIdRef.current }, (reply) => {
+        if (reply?.ok) return;
+        callIdRef.current = null;
+        peerConnectionRef.current?.close();
+        peerConnectionRef.current = null;
+        setPeerConnection(null);
+        stopLocalMedia();
+        setIsCallModalVisible(false);
+        toast("Kết nối cuộc gọi đã kết thúc.", "error");
+      });
+    }, 20000);
+    return () => clearInterval(timer);
+  }, [isCallModalVisible, socket, stopLocalMedia, toast]);
 
   const sendMessage = () => {
     const text = message.trim();
@@ -668,6 +702,14 @@ const Chat = () => {
   };
 
   const requestCall = (video) => {
+    clearTimeout(ringTimerRef.current);
+    ringTimerRef.current = setTimeout(() => {
+      if (callIdRef.current)
+        socket.emit("callEnded", { to: receiverId, callId: callIdRef.current });
+      callIdRef.current = null;
+      setCalling(false);
+      toast("Không có phản hồi từ người nhận.", "info");
+    }, 60000);
     socket.emit(
       "videoCallRequest",
       {
@@ -677,6 +719,7 @@ const Chat = () => {
       (result) => {
         if (result?.ok) callIdRef.current = result.callId;
         else {
+          clearTimeout(ringTimerRef.current);
           setCalling(false);
           toast("Không thể bắt đầu cuộc gọi.", "error");
         }
@@ -686,6 +729,7 @@ const Chat = () => {
   };
 
   const handleCallCancel = () => {
+    clearTimeout(ringTimerRef.current);
     setIsCallModalVisible(false);
     if (peerConnectionRef.current) {
       peerConnectionRef.current.close();
@@ -700,6 +744,7 @@ const Chat = () => {
   };
 
   const handleCallingCancel = () => {
+    clearTimeout(ringTimerRef.current);
     if (callIdRef.current)
       socket.emit("callEnded", { to: receiverId, callId: callIdRef.current });
     callIdRef.current = null;
@@ -716,6 +761,7 @@ const Chat = () => {
 
   const acceptIncomingCall = () => {
     if (!incomingCall) return;
+    clearTimeout(incomingTimerRef.current);
     handleAcceptCall(
       incomingCall.from,
       incomingCall.video,
@@ -726,6 +772,7 @@ const Chat = () => {
 
   const rejectIncomingCall = () => {
     if (incomingCall) {
+      clearTimeout(incomingTimerRef.current);
       socket.emit("callRejected", {
         to: incomingCall.from,
         callId: incomingCall.callId,

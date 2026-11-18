@@ -109,7 +109,7 @@ async function transition(id, userId, socketId, action) {
   return next;
 }
 
-async function authorizeSignal(id, userId, socketId, to) {
+async function authorizeSignal(id, userId, socketId, to, kind = null) {
   const session = await get(id);
   if (
     session.state !== "active" ||
@@ -124,7 +124,25 @@ async function authorizeSignal(id, userId, socketId, to) {
     throw callError("CALL_FORBIDDEN");
   if (to !== (userId === session.from ? session.to : session.from))
     throw callError("CALL_FORBIDDEN");
+  if (
+    (kind === "offer" && userId !== session.from) ||
+    (kind === "answer" && userId !== session.to)
+  )
+    throw callError("CALL_FORBIDDEN");
   return session;
+}
+
+async function heartbeat(id, userId, socketId) {
+  const session = await get(id);
+  const to = session.from === userId ? session.to : session.from;
+  await authorizeSignal(id, userId, socketId, to);
+  const redis = client();
+  await redis
+    .multi()
+    .expire(sessionKey(id), ACTIVE_SECONDS)
+    .expire(userKey(session.from), ACTIVE_SECONDS)
+    .expire(userKey(session.to), ACTIVE_SECONDS)
+    .exec();
 }
 
 async function endForSocket(socketId, userId) {
@@ -139,4 +157,11 @@ async function endForSocket(socketId, userId) {
   return transition(id, userId, socketId, "end");
 }
 
-module.exports = { request, get, transition, authorizeSignal, endForSocket };
+module.exports = {
+  request,
+  get,
+  transition,
+  authorizeSignal,
+  heartbeat,
+  endForSocket,
+};

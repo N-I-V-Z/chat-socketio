@@ -1,9 +1,10 @@
-const { Op } = require("sequelize");
+const { Op, QueryTypes } = require("sequelize");
 const db = require("../models");
 const redisConnection = require("./redisConnection");
+const logger = require("./logger");
 
 const RETENTION_DAYS = 30;
-const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 const EVENT_TYPES = Object.freeze({
   USER_REGISTERED: "user.registered",
   LOGIN_SUCCEEDED: "auth.login.succeeded",
@@ -69,15 +70,15 @@ function startRetentionCleanup() {
         Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000,
       );
       for (let batch = 0; batch < 10; batch++) {
-        const [rows] = await db.sequelize.query(
+        const rows = await db.sequelize.query(
           "DELETE TOP (1000) FROM [dbo].[AuditLogs] WHERE [occurredAt] < :cutoff; SELECT @@ROWCOUNT AS deleted;",
-          { replacements: { cutoff } },
+          { replacements: { cutoff }, type: QueryTypes.SELECT },
         );
         const deleted = Number(rows?.[0]?.deleted ?? 0);
         if (deleted < 1000) break;
       }
     } catch (error) {
-      console.error("Audit log retention cleanup failed:", error);
+      logger.error({ err: error }, "Audit log retention cleanup failed");
     }
   };
 

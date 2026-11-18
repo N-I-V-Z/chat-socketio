@@ -1,8 +1,17 @@
 const { z } = require("zod");
 const calls = require("../services/callSessionService");
 const { userRoom } = require("../utils/chatUtils");
+const metrics = require("../services/metrics");
+const rateLimiter = require("../services/rateLimiter");
 
-const userId = z.coerce.number().int().positive().safe();
+const userId = z.union([
+  z.number().int().positive().safe(),
+  z
+    .string()
+    .regex(/^[1-9]\d*$/)
+    .transform(Number)
+    .pipe(z.number().int().positive().safe()),
+]);
 const callId = z.string().uuid();
 const target = z.object({ callId, to: userId }).strict();
 const request = z.object({ to: userId, video: z.boolean() }).strict();
@@ -27,6 +36,18 @@ function registerCallHandlers(io, socket) {
   const handle = (name, schema, action) => {
     socket.on(name, async (payload, ack) => {
       try {
+        if (
+          !(await rateLimiter.allow(
+            `socket:${actor}:${name}`,
+            name === "videoCallRequest" ? 10 : 300,
+            60,
+            "socket",
+          ))
+        ) {
+          throw Object.assign(new Error("Rate limited"), {
+            code: "RATE_LIMITED",
+          });
+        }
         const parsed = schema.safeParse(payload);
         if (!parsed.success)
           throw Object.assign(new Error("Invalid payload"), {
@@ -35,6 +56,10 @@ function registerCallHandlers(io, socket) {
         const result = await action(parsed.data);
         if (typeof ack === "function") ack({ ok: true, ...result });
       } catch (error) {
+        metrics.socketRejected.inc({
+          event: name,
+          reason: error.code || "CALL_UNAVAILABLE",
+        });
         if (typeof ack === "function")
           ack({ ok: false, code: error.code || "CALL_UNAVAILABLE" });
       }
@@ -81,10 +106,17 @@ function registerCallHandlers(io, socket) {
     ["ice-candidate", candidate, "iceCandidate"],
   ]) {
     handle(name, schema, async (data) => {
-      await calls.authorizeSignal(data.callId, actor, socket.id, data.to);
+      await calls.authorizeSignal(data.callId, actor, socket.id, data.to, name);
       send(data.to, name, { callId: data.callId, [field]: data[field] });
     });
   }
+  handle(
+    "callHeartbeat",
+    z.object({ callId }).strict(),
+    async ({ callId: id }) => {
+      await calls.heartbeat(id, actor, socket.id);
+    },
+  );
   socket.on("disconnect", () => {
     calls
       .endForSocket(socket.id, actor)

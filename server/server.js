@@ -18,6 +18,8 @@ const redisConnection = require("./services/redisConnection");
 const configureRedisSocketAdapter = require("./services/redisSocketAdapter");
 const { createChatEventPipeline } = require("./services/kafkaChatPipeline");
 const auditLogService = require("./services/auditLogService");
+const logger = require("./services/logger");
+const metrics = require("./services/metrics");
 
 let adapterReady = false;
 let stopAdapter = null;
@@ -27,17 +29,19 @@ let adapterConnecting = null;
 let shuttingDown = false;
 const app = createApp({
   readiness: async () => {
-    if (
-      !adapterReady ||
-      !redisConnection.getClient()?.isReady ||
-      !chatEventPipeline.isReady() ||
-      shuttingDown
-    )
+    const redisReady =
+      adapterReady && Boolean(redisConnection.getClient()?.isReady);
+    const kafkaReady = chatEventPipeline.isReady();
+    metrics.dependencyReady.set({ dependency: "redis" }, redisReady ? 1 : 0);
+    metrics.dependencyReady.set({ dependency: "kafka" }, kafkaReady ? 1 : 0);
+    if (!adapterReady || !redisReady || !kafkaReady || shuttingDown)
       return false;
     try {
       await db.sequelize.authenticate();
+      metrics.dependencyReady.set({ dependency: "database" }, 1);
       return true;
     } catch {
+      metrics.dependencyReady.set({ dependency: "database" }, 0);
       return false;
     }
   },
@@ -49,13 +53,13 @@ const io = new Server(server, {
   cors: { origin: clientUrl, credentials: true, methods: ["GET", "POST"] },
 });
 app.set("io", io);
-const chatEventPipeline = createChatEventPipeline({ db, io });
-registerSockets(io, { isReady: () => adapterReady && !shuttingDown });
+const chatEventPipeline = createChatEventPipeline({ db, io, logger });
+registerSockets(io, { isReady: () => adapterReady && !shuttingDown, logger });
 
 async function ensureAdapter() {
   if (adapterReady || shuttingDown) return;
   if (adapterConnecting) return adapterConnecting;
-  adapterConnecting = configureRedisSocketAdapter(io, redisConnection)
+  adapterConnecting = configureRedisSocketAdapter(io, redisConnection, logger)
     .then((cleanup) => {
       stopAdapter = cleanup;
       adapterReady = Boolean(cleanup);
@@ -81,7 +85,7 @@ async function shutdown() {
   ]);
   for (const result of results) {
     if (result.status === "rejected")
-      console.error("Shutdown cleanup failed:", result.reason);
+      logger.error({ err: result.reason }, "Shutdown cleanup failed");
   }
 }
 
@@ -91,7 +95,7 @@ async function startServer() {
     await ensureAdapter();
     adapterRetry = setInterval(() => {
       void ensureAdapter().catch((error) =>
-        console.error("Redis adapter retry failed:", error),
+        logger.error({ err: error }, "Redis adapter retry failed"),
       );
     }, 5000);
     adapterRetry.unref?.();
@@ -104,7 +108,7 @@ async function startServer() {
         resolve();
       });
     });
-    console.log(`Server is running on port ${process.env.PORT || 5000}`);
+    logger.info({ port: process.env.PORT || 5000 }, "Server started");
   } catch (error) {
     await shutdown();
     throw error;
@@ -119,7 +123,7 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
     }, 10000);
     void shutdown()
       .catch((error) => {
-        console.error("Shutdown failed:", error);
+        logger.error({ err: error }, "Shutdown failed");
         process.exitCode = 1;
       })
       .finally(() => clearTimeout(timeout));
@@ -128,7 +132,7 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
 
 if (require.main === module) {
   startServer().catch((error) => {
-    console.error("Could not start chat services:", error);
+    logger.error({ err: error }, "Could not start chat services");
     process.exitCode = 1;
   });
 }

@@ -6,7 +6,7 @@ const MAX_RECONNECT_DELAY_MS = 2000;
 function createRedisConnection({
   url = process.env.REDIS_URL,
   clientFactory = createClient,
-  logger = console,
+  logger = require("./logger"),
 } = {}) {
   let client = null;
   let connectPromise = null;

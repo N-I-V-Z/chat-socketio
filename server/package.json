@@ -4,6 +4,7 @@
   "main": "server.js",
   "scripts": {
     "test": "node --test",
+    "test:load": "node scripts/load-benchmark.js",
     "start": "node scripts/ensure-database.js && sequelize-cli db:migrate && node server.js",
     "dev": "nodemon server.js",
     "db:migrate": "sequelize-cli db:migrate",

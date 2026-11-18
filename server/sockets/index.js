@@ -5,6 +5,7 @@ const redisConnection = require("../services/redisConnection");
 const db = require("../models");
 const { userRoom } = require("../utils/chatUtils");
 const registerCallHandlers = require("./callHandlers");
+const metrics = require("../services/metrics");
 
 function authError(code) {
   const error = new Error("Authentication required");
@@ -12,7 +13,10 @@ function authError(code) {
   return error;
 }
 
-function registerSockets(io, { isReady, logger = console }) {
+function registerSockets(
+  io,
+  { isReady, logger = require("../services/logger") },
+) {
   const recordPresence = (eventType, userId, userName) => {
     void auditLogService
       .recordEvent({ eventType, actorUserId: userId, actorUserName: userName })
@@ -48,6 +52,7 @@ function registerSockets(io, { isReady, logger = console }) {
   });
 
   io.on("connection", (socket) => {
+    metrics.sockets.inc();
     const { userId, userName, accessTokenExpiresAt } = socket.data;
     socket.join(userRoom(userId));
     const connectPromise = presenceService
@@ -97,6 +102,7 @@ function registerSockets(io, { isReady, logger = console }) {
       }
     });
     socket.on("disconnect", () => {
+      metrics.sockets.dec();
       clearTimeout(expiryTimer);
       clearInterval(heartbeat);
       void connectPromise
